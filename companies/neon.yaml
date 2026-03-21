@@ -1,0 +1,11 @@
+name: Neon
+career_url: https://neon.tech/careers
+ats: ashby
+ats_slug: neondatabase
+size_tier: Startup
+industry:
+- Database
+- PostgreSQL
+- Serverless
+- Infrastructure
+date_added: '2026-02-18'

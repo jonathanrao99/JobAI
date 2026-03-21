@@ -1,0 +1,375 @@
+"""
+backend/utils/llm_client.py
+============================
+Universal LLM caller with simple sequential fallback.
+
+Each call_llm invocation independently tries providers in order:
+  anthropic → google → openai → openrouter
+No shared mutable state between calls — safe for concurrent use.
+"""
+
+import asyncio
+import json
+import re
+from typing import Any
+
+import httpx
+from loguru import logger
+
+from backend.config import settings
+
+_OPENROUTER_429_RETRIES = 3
+_OPENROUTER_429_BACKOFF = 20  # seconds between retries
+
+def _available_providers() -> list[str]:
+    """Return the list of providers that have API keys configured."""
+    # If the operator explicitly selects OpenRouter, don't waste time trying other
+    # providers first. This keeps scraping/scoring predictable during rollout.
+    if settings.llm_provider == "openrouter":
+        return ["openrouter"] if settings.openrouter_api_key else []
+
+    # Otherwise, build an ordered list of configured providers.
+    out: list[str] = []
+    if settings.anthropic_api_key:
+        out.append("anthropic")
+    if settings.google_api_key or settings.gemini_api_key:
+        out.append("google")
+    if settings.openai_api_key:
+        out.append("openai")
+    if settings.openrouter_api_key:
+        out.append("openrouter")
+    return out
+
+
+async def call_llm(
+    messages: list[dict],
+    system: str = "",
+    max_tokens: int = 1000,
+    temperature: float = 0.3,
+    expect_json: bool = False,
+) -> str:
+    """
+    Try each available provider in order. First success wins.
+    Completely stateless — safe for concurrent asyncio.gather calls.
+    """
+    providers = _available_providers()
+    if not providers:
+        raise RuntimeError("No LLM providers configured — set at least one API key in .env")
+
+    last_err: Exception | None = None
+
+    for provider in providers:
+        logger.debug(f"LLM call → provider={provider} max_tokens={max_tokens}")
+        try:
+            result = await _dispatch(provider, messages, system, max_tokens, temperature)
+            if expect_json:
+                result = _strip_json_fences(result)
+            return result
+        except Exception as e:
+            last_err = e
+            logger.warning(f"[LLM_CLIENT] provider_failed={provider} err={e}")
+            continue
+
+    raise last_err or RuntimeError("All LLM providers failed")
+
+
+def call_llm_sync(
+    messages: list[dict],
+    system: str = "",
+    max_tokens: int = 1000,
+    temperature: float = 0.3,
+    expect_json: bool = False,
+) -> str:
+    """Synchronous wrapper for non-async contexts."""
+    import asyncio
+    return asyncio.run(call_llm(messages, system, max_tokens, temperature, expect_json))
+
+
+async def _dispatch(provider: str, messages, system, max_tokens, temperature) -> str:
+    if provider == "anthropic":
+        return await _call_anthropic(messages, system, max_tokens, temperature)
+    if provider == "google":
+        return await _call_gemini(messages, system, max_tokens, temperature)
+    if provider == "openai":
+        return await _call_openai(messages, system, max_tokens, temperature)
+    if provider == "openrouter":
+        return await _call_openrouter(messages, system, max_tokens, temperature)
+    raise ValueError(f"Unknown provider: {provider}")
+
+
+# ── Provider implementations ─────────────────────────────────────────────
+
+async def _call_anthropic(messages, system, max_tokens, temperature) -> str:
+    import anthropic
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    response = await client.messages.create(
+        model=settings.llm_model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        system=system or "You are a helpful assistant.",
+        messages=messages,
+    )
+    return response.content[0].text
+
+
+async def _call_gemini(messages, system, max_tokens, temperature) -> str:
+    api_key = settings.google_api_key or settings.gemini_api_key
+    contents = []
+    if system:
+        contents.append({"role": "user", "parts": [{"text": f"[System]: {system}"}]})
+        contents.append({"role": "model", "parts": [{"text": "Understood."}]})
+    for msg in messages:
+        role = "user" if msg["role"] == "user" else "model"
+        contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+
+    model = (settings.google_model or "gemini-2.0-flash").replace("gemini/", "")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(
+            url,
+            headers={"Content-Type": "application/json"},
+            params={"key": api_key},
+            json={
+                "contents": contents,
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature},
+            },
+        )
+        r.raise_for_status()
+        data = r.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
+async def _call_openai(messages, system, max_tokens, temperature) -> str:
+    all_messages: list[dict[str, Any]] = []
+    if system:
+        all_messages.append({"role": "system", "content": system})
+    all_messages.extend(messages)
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.openai_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": settings.openai_model or "gpt-4o-mini",
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": all_messages,
+            },
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
+
+
+async def _call_openrouter(messages, system, max_tokens, temperature) -> str:
+    all_messages = []
+    if system:
+        all_messages.append({"role": "system", "content": system})
+    all_messages.extend(messages)
+
+    models_to_try: list[str] = []
+    if settings.openrouter_model:
+        models_to_try.append(settings.openrouter_model)
+    if getattr(settings, "openrouter_fallback_model", ""):
+        models_to_try.append(settings.openrouter_fallback_model)
+
+    if not models_to_try:
+        raise RuntimeError("No OpenRouter models configured")
+
+    last_err: Exception | None = None
+    for model in models_to_try:
+        for attempt in range(_OPENROUTER_429_RETRIES):
+            try:
+                content = await _openrouter_single_call(
+                    model, all_messages, max_tokens, temperature
+                )
+                return content
+            except _RateLimitError as e:
+                wait = _OPENROUTER_429_BACKOFF * (attempt + 1)
+                logger.warning(
+                    f"[LLM_CLIENT] 429 on {model} (attempt {attempt + 1}/"
+                    f"{_OPENROUTER_429_RETRIES}), retrying in {wait}s"
+                )
+                last_err = e
+                await asyncio.sleep(wait)
+            except Exception as e:
+                last_err = e
+                logger.warning(f"[LLM_CLIENT] openrouter_model_failed={model} err={e}")
+                break  # non-retryable error → try next model
+
+    raise last_err or RuntimeError("OpenRouter call failed for all models")
+
+
+class _RateLimitError(RuntimeError):
+    """Raised on 429 to trigger retry."""
+
+
+async def _openrouter_single_call(
+    model: str, all_messages: list, max_tokens: int, temperature: float
+) -> str:
+    async with httpx.AsyncClient(timeout=120) as client:
+        r = await client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.openrouter_api_key}",
+                "HTTP-Referer": "https://github.com/jonathanrao99/job-agent",
+                "X-Title": "Job Search Agent",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "messages": all_messages,
+            },
+        )
+
+    data: dict[str, Any] | None = None
+    try:
+        data = r.json()
+    except Exception:
+        data = None
+
+    if r.status_code == 429:
+        msg = "rate limited"
+        if isinstance(data, dict) and isinstance(data.get("error"), dict):
+            msg = data["error"].get("message") or msg
+        raise _RateLimitError(f"OpenRouter 429: {msg}")
+
+    if r.status_code >= 400:
+        if isinstance(data, dict) and isinstance(data.get("error"), dict):
+            err = data["error"]
+            msg = err.get("message") or str(err)
+            code = err.get("code")
+            raise RuntimeError(
+                f"OpenRouter error: {msg}" + (f" (code={code})" if code else "")
+            )
+        raise RuntimeError(f"OpenRouter HTTP {r.status_code}")
+
+    if not isinstance(data, dict):
+        raise RuntimeError("OpenRouter returned non-JSON response")
+
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"OpenRouter returned no choices: {list(data.keys())}")
+
+    msg_obj = choices[0].get("message") or {}
+    content = msg_obj.get("content")
+
+    # Many free models are reasoning-only: content is null, answer is in reasoning.
+    if content is None:
+        content = _extract_from_reasoning(msg_obj)
+
+    if content is None:
+        content = choices[0].get("text")
+
+    if content is None:
+        raise RuntimeError("OpenRouter returned empty content")
+
+    return str(content)
+
+
+def _extract_from_reasoning(msg: dict) -> str | None:
+    """Pull usable text from reasoning_details when content is null."""
+    details = msg.get("reasoning_details") or []
+    reasoning_text = msg.get("reasoning") or ""
+
+    if details:
+        parts = [d.get("text", "") for d in details if isinstance(d, dict)]
+        reasoning_text = "".join(parts)
+
+    if not reasoning_text:
+        return None
+
+    # Reasoning models wrap thinking in <think>...</think> then produce the answer.
+    # Try to extract text after </think>.
+    after_think = re.split(r"</think>", reasoning_text, maxsplit=1)
+    if len(after_think) == 2 and after_think[1].strip():
+        return after_think[1].strip()
+
+    # If no </think> tag, the whole reasoning might contain the JSON answer.
+    # Look for a JSON object in the reasoning.
+    json_match = re.search(r"\{[\s\S]*\}", reasoning_text)
+    if json_match:
+        return json_match.group(0)
+
+    return None
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────
+
+def _strip_json_fences(text: str) -> str:
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = lines[1:] if lines[0].startswith("```") else lines
+        lines = lines[:-1] if lines and lines[-1].strip() == "```" else lines
+        text = "\n".join(lines).strip()
+    return text
+
+
+def parse_json_response(text: str) -> dict | list:
+    clean = _strip_json_fences(text)
+    try:
+        return json.loads(clean)
+    except json.JSONDecodeError as e:
+        # Common failure mode: models return JSON with unescaped newlines inside strings.
+        # We try to repair by extracting the outer JSON object and escaping '\n' within quoted strings.
+        try:
+            extracted = _extract_json_object(clean)
+            repaired = _escape_newlines_in_json_strings(extracted)
+            return json.loads(repaired)
+        except Exception:
+            logger.error(f"Failed to parse LLM JSON response: {e}")
+            logger.debug(f"Raw response: {text[:500]}")
+            raise ValueError(f"LLM returned invalid JSON: {e}") from e
+
+
+def _extract_json_object(text: str) -> str:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return text
+    return text[start : end + 1]
+
+
+def _escape_newlines_in_json_strings(text: str) -> str:
+    """
+    JSON strings cannot contain raw newline characters.
+    If an LLM outputs multi-line JSON strings, json.loads will fail.
+    This function escapes raw '\\n' characters inside quoted strings.
+    """
+    out: list[str] = []
+    in_str = False
+    escape = False
+
+    for ch in text:
+        if in_str:
+            if escape:
+                out.append(ch)
+                escape = False
+                continue
+            if ch == "\\":
+                out.append(ch)
+                escape = True
+                continue
+            if ch == '"':
+                out.append(ch)
+                in_str = False
+                continue
+            if ch == "\n":
+                out.append("\\n")
+                continue
+            if ch == "\r":
+                # Drop CR to avoid odd formatting.
+                continue
+            out.append(ch)
+        else:
+            out.append(ch)
+            if ch == '"':
+                in_str = True
+
+    return "".join(out)

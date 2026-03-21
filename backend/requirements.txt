@@ -1,0 +1,61 @@
+# Job Search Agent — Python dependencies (backend)
+# From repo root: pip install -r backend/requirements.txt
+
+# Web
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-multipart==0.0.9
+
+# Database
+supabase==2.9.0
+psycopg2-binary==2.9.9
+
+# Task queue
+celery==5.4.0
+redis==5.0.8
+apscheduler==3.10.4
+flower==2.0.1
+
+# AI
+anthropic==0.34.0
+tiktoken==0.7.0
+
+# Browser automation
+playwright==1.47.0
+playwright-stealth==1.0.6
+
+# Scraping
+python-jobspy==1.1.78
+apify-client==1.8.1
+beautifulsoup4==4.12.3
+lxml==5.3.0
+httpx==0.27.2
+
+# Resume
+python-docx==1.1.2
+pypdf==4.3.1
+
+# Email
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-api-python-client==2.149.0
+resend==2.4.0
+
+# Data
+pandas==2.2.3
+python-dateutil==2.9.0
+pyyaml==6.0.2
+
+# Utils
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.5.2
+loguru==0.7.2
+tenacity==9.0.0
+python-slugify==8.0.4
+
+# Dev
+pytest==8.3.3
+pytest-asyncio==0.24.0
+black==24.8.0
+ruff==0.6.9

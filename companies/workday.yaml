@@ -1,0 +1,12 @@
+name: Workday
+career_url: https://workday.wd5.myworkdayjobs.com/Workday
+ats: workday
+ats_slug: workday
+size_tier: Large
+industry:
+- SaaS
+- HR
+- Finance
+- Enterprise
+- Cloud
+date_added: '2026-02-18'

@@ -1,0 +1,3 @@
+-- job_dashboard_stats() lives in backend/db/schema.sql (search: job_dashboard_stats).
+-- Apply it by running that file in Supabase SQL Editor, or use Supabase MCP apply_migration.
+-- This file is intentionally empty to avoid duplicating the function body.

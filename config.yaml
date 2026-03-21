@@ -1,0 +1,201 @@
+# ============================================================
+# Job Application Automation — config.yaml
+# ============================================================
+# Copy this file to config.yaml and fill in your details.
+#   cp config.yaml.example config.yaml
+
+# ============================================================
+# Search Profiles — each profile targets different job families
+# ============================================================
+profiles:
+  - name: "ML Engineer"
+    target_job_titles:
+      - "Machine Learning Engineer"
+      - "ML Engineer"
+      - "AI Engineer"
+      - "AI/ML Engineer"
+      - "ML Platform Engineer"
+      - "MLOps Engineer"
+      - "Deep Learning Engineer"
+      - "Research Engineer"
+      - "Applied ML"
+      - "Machine Learning Scientist"
+      - "Generative AI Engineer"
+      - "LLM Engineer"
+      - "AI Platform Engineer"
+      - "AI Infrastructure Engineer"
+    experience_levels: [Entry, Mid, Senior, Staff]
+    max_years_required: 5
+    min_match_score: 50
+
+  - name: "Data Scientist"
+    target_job_titles:
+      - "Data Scientist"
+      - "Applied Scientist"
+      - "Research Scientist"
+      - "Data Science"
+      - "NLP Engineer"
+      - "Computer Vision Engineer"
+      - "Quantitative Researcher"
+      - "Decision Scientist"
+      - "AI Scientist"
+      - "Applied AI Scientist"
+      - "Machine Learning Scientist"
+    experience_levels: [Entry, Mid, Senior, Staff]
+    max_years_required: 5
+    min_match_score: 45
+
+  - name: "Data Engineer"
+    target_job_titles:
+      - "Data Engineer"
+      - "Analytics Engineer"
+      - "Platform Engineer"
+      - "Data Infrastructure"
+      - "Data Platform"
+      - "Big Data Engineer"
+      - "Data Platform Engineer"
+      - "ETL Engineer"
+      - "Streaming Engineer"
+      - "Backend Data Engineer"
+    experience_levels: [Entry, Mid, Senior]
+    max_years_required: 5
+    min_match_score: 45
+
+# Target job titles (union of all profiles — used for global filtering/display)
+target_job_titles:
+  # ML Engineer
+  - "Machine Learning Engineer"
+  - "ML Engineer"
+  - "AI Engineer"
+  - "AI/ML Engineer"
+  - "ML Platform Engineer"
+  - "MLOps Engineer"
+  - "Deep Learning Engineer"
+  - "Research Engineer"
+  - "Applied ML"
+  - "Machine Learning Scientist"
+  - "Generative AI Engineer"
+  - "LLM Engineer"
+  - "AI Platform Engineer"
+  - "AI Infrastructure Engineer"
+  # Data Scientist
+  - "Data Scientist"
+  - "Applied Scientist"
+  - "Research Scientist"
+  - "Data Science"
+  - "NLP Engineer"
+  - "Computer Vision Engineer"
+  - "Quantitative Researcher"
+  - "Decision Scientist"
+  - "AI Scientist"
+  - "Applied AI Scientist"
+  # Data Engineer
+  - "Data Engineer"
+  - "Analytics Engineer"
+  - "Platform Engineer"
+  - "Data Infrastructure"
+  - "Data Platform"
+  - "Big Data Engineer"
+  - "Data Platform Engineer"
+  - "ETL Engineer"
+  - "Streaming Engineer"
+  - "Backend Data Engineer"
+
+# Target locations — used for soft-filtering in match scoring
+target_locations:
+  - "Remote"
+  - "Atlanta, GA"
+  - "United States"
+
+# Minimum match score (0–100) to appear in Top Matches sheet
+min_match_score: 50
+
+# Your actual years of professional experience.
+# Used for resume-job matching (overrides auto-parsed value from PDF).
+# Set to null to auto-detect from resume dates.
+my_years_experience: 3
+
+# Hard filter: skip any job whose description explicitly requires more than this many years.
+# Set to null to disable.
+max_years_required: 5
+
+# Experience level filter — only keep jobs at these inferred levels.
+# Leave empty [] to include all levels.
+experience_levels:
+  - Entry
+  - Mid
+  - Senior
+  - Staff
+
+# Keywords in job description that auto-disqualify a posting (case-insensitive)
+exclude_keywords:
+  - "6+ years"
+  - "7+ years"
+  - "8+ years"
+  - "9+ years"
+  - "10+ years"
+  - "15+ years"
+  - "20+ years"
+  - "TS/SCI"
+  - "Top Secret"
+  - "Security Clearance"
+  - "Clearance required"
+  - "US Citizenship required"
+
+# Max jobs to save per company per day (prevent one company flooding results)
+max_jobs_per_company: 10
+
+# Path to folder containing your resume files (PDF and DOCX supported)
+resume_folder: "./resumes"
+
+# Hours threshold — only jobs posted within this window are saved
+hours_threshold: 24
+
+# ============================================================
+# Location Filters
+# ============================================================
+location_filter:
+  usa_only: true                # Skip jobs outside USA
+  allow_remote_worldwide: false # Set true to include Remote-Worldwide / Global remote jobs
+  allow_unknown_location: true  # Set false to strictly drop ambiguous locations
+  target_states: []             # Optional: e.g. [GA, NY, CA, TX] — empty = all US states
+
+# ============================================================
+# Output
+# ============================================================
+output_dir: "./output"
+db_dir: "./db"
+
+# ============================================================
+# Logging
+# ============================================================
+log_level: "INFO"
+log_file: "./logs/scraper.log"
+company_updates_log: "./logs/company_updates.log"
+
+# ============================================================
+# Rate Limiting
+# ============================================================
+rate_limit:
+  requests_per_second: 2
+  min_delay_seconds: 0.5
+  max_delay_seconds: 2.0
+
+# ============================================================
+# Scraper Settings
+# ============================================================
+scraper:
+  timeout_seconds: 30
+  max_retries: 3
+  headless: true        # Playwright runs headless by default
+  user_agent_rotation: true
+
+# ============================================================
+# Job Board APIs
+# ============================================================
+# Adzuna: free API — register at https://developer.adzuna.com
+# Jooble:  free API — register at https://jooble.org/api/about
+job_boards:
+  adzuna_app_id:  ""   # paste your App ID here
+  adzuna_app_key: ""   # paste your App Key here
+  jooble_api_key: ""   # paste your API key here

@@ -1,0 +1,373 @@
+{
+  "_instructions": "Source of truth for all agent decisions. Do not modify field names — only values.",
+  "_last_updated": "2026-03-18",
+  "personal": {
+    "name": "Jonathan Thota",
+    "email": "jonathanrao5576@gmail.com",
+    "phone": "+1-205-503-0985",
+    "location": "Houston, TX",
+    "linkedin_url": "https://linkedin.com/in/jonathanrao99",
+    "github_url": "https://github.com/jonathanrao99",
+    "portfolio_url": "https://jonathanthota.vercel.app"
+  },
+  "target_roles": [
+    "Data Scientist",
+    "Data Analyst",
+    "Data Engineer",
+    "Machine Learning Engineer",
+    "AI Engineer",
+    "Business Intelligence Analyst",
+    "Business Analyst",
+    "Analytics Engineer",
+    "Software Engineer",
+    "Full Stack Developer",
+    "Backend Engineer",
+    "Frontend Engineer",
+    "AI/ML Engineer",
+    "Applied Scientist",
+    "Research Engineer"
+  ],
+  "_role_priority": {
+    "tier_1": [
+      "Data Scientist",
+      "Machine Learning Engineer",
+      "AI Engineer",
+      "Analytics Engineer"
+    ],
+    "tier_2": [
+      "Data Analyst",
+      "Data Engineer",
+      "Business Intelligence Analyst"
+    ],
+    "tier_3": [
+      "Software Engineer",
+      "Full Stack Developer",
+      "Backend Engineer"
+    ]
+  },
+  "experience_level": "entry_with_experience",
+  "years_experience": 1,
+  "_experience_note": "MS student graduating 2026 with 2 years of real professional experience across data, ML, and full-stack roles. Not a traditional new grad — has production deployments and verifiable impact metrics.",
+  "education": {
+    "university": "Texas A&M University–Victoria",
+    "degree": "Master of Science",
+    "major": "Data Science",
+    "graduation_year": 2026,
+    "graduation_month": "May",
+    "gpa": "3.8/4.0",
+    "gpa_numeric": 3.8,
+    "highlight_gpa": true,
+    "relevant_coursework": [
+      "Machine Learning",
+      "Statistical Modeling",
+      "Predictive Analytics",
+      "Data Mining",
+      "Natural Language Processing",
+      "Data Structures & Algorithms",
+      "Database Systems",
+      "Software Engineering"
+    ],
+    "university_aliases": [
+      "Texas A&M University–Victoria",
+      "Texas A&M University - Victoria",
+      "Texas A&M University Victoria",
+      "Texas A&M–Victoria",
+      "TAMU-V",
+      "TAMUV",
+      "University of Houston-Victoria",
+      "University of Houston Victoria",
+      "UHV"
+    ],
+    "_university_alias_note": "Try aliases in order when primary name not found in a dropdown. UHV/University of Houston-Victoria is the legacy name — use as last resort if no A&M variant appears.",
+    "degree_aliases": [
+      "MS",
+      "M.S.",
+      "Master of Science",
+      "Masters",
+      "Master's"
+    ],
+    "major_aliases": [
+      "Data Science",
+      "Computer Science",
+      "Information Science",
+      "Applied Data Science",
+      "Computer Information Systems"
+    ]
+  },
+  "skills": {
+    "languages": [
+      "Python",
+      "SQL",
+      "JavaScript",
+      "TypeScript",
+      "R"
+    ],
+    "ml_and_data": [
+      "TensorFlow",
+      "Keras",
+      "scikit-learn",
+      "XGBoost",
+      "OpenCV",
+      "Pandas",
+      "NumPy",
+      "LSTM",
+      "MobileNetV2",
+      "Transfer Learning",
+      "Feature Engineering",
+      "Data Preprocessing",
+      "NLP"
+    ],
+    "frameworks": [
+      "React",
+      "Next.js",
+      "Node.js",
+      "FastAPI",
+      "Flask",
+      "Express"
+    ],
+    "data_tools": [
+      "Tableau",
+      "Power BI",
+      "Jupyter",
+      "Streamlit",
+      "Plotly"
+    ],
+    "databases": [
+      "PostgreSQL",
+      "MySQL",
+      "Redis",
+      "Supabase"
+    ],
+    "cloud_and_devops": [
+      "AWS",
+      "Docker",
+      "Git",
+      "GitHub",
+      "CI/CD",
+      "Webhooks"
+    ],
+    "concepts": [
+      "ETL Pipelines",
+      "REST APIs",
+      "System Design",
+      "Machine Learning Ops",
+      "Data Engineering",
+      "Cloud Deployment",
+      "Agile",
+      "Schema Validation"
+    ]
+  },
+  "work_experience": [
+    {
+      "company": "Birdside HTX",
+      "role": "Data Analyst & Operations Manager",
+      "duration": "Oct 2025 – Jan 2026",
+      "is_current": false,
+      "impact_metrics": [
+        "70% reduction in operational errors",
+        "real-time KPI delivery"
+      ],
+      "bullets": [
+        "Built automated Python ETL pipelines to ingest, clean, and standardize multi-source operational data",
+        "Developed Power BI dashboards delivering real-time KPIs and business insights for stakeholders",
+        "Reduced operational errors by 70%+ by deploying a production data system integrating REST APIs",
+        "Collaborated cross-functionally with operations, sales, and marketing teams to drive data-driven decisions"
+      ]
+    },
+    {
+      "company": "Sol3 Studio",
+      "role": "Full Stack Developer",
+      "duration": "Apr 2025 – Dec 2025",
+      "is_current": false,
+      "impact_metrics": [
+        "production-ready applications",
+        "real-time data integration"
+      ],
+      "bullets": [
+        "Designed and implemented REST API integrations and automated backend data workflows",
+        "Built scalable data pipelines using webhooks and schema validation across systems",
+        "Delivered production-ready applications with real-time data integration and analytics instrumentation",
+        "Maintained version-controlled codebases with Git/GitHub and full documentation"
+      ]
+    },
+    {
+      "company": "CodeClause",
+      "role": "Data Science Intern",
+      "duration": "Aug 2023 – Oct 2023",
+      "is_current": false,
+      "impact_metrics": [
+        "86.6% model accuracy",
+        "85%+ computer vision accuracy"
+      ],
+      "bullets": [
+        "Built MRI brain tumor classification model using MobileNetV2 achieving 86.6% accuracy",
+        "Developed real-time computer vision pipeline using OpenCV with >85% accuracy",
+        "Applied data preprocessing, augmentation, and transfer learning techniques in ML pipelines",
+        "Collaborated via GitHub on code reviews and distributed team workflows"
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "name": "AI-Powered Sales Forecasting & Inventory Management System",
+      "description": "End-to-end LSTM-based forecasting system with production deployment and stakeholder dashboards",
+      "tech_stack": [
+        "Python",
+        "TensorFlow",
+        "Flask",
+        "SQL",
+        "Pandas"
+      ],
+      "github_url": "https://github.com/jonathanrao99",
+      "impact": "~92% forecasting accuracy, enabling data-driven inventory decisions at scale"
+    },
+    {
+      "name": "NYC Collision Risk Prediction Dashboard",
+      "description": "Analyzed 1M+ records, built ML models with interactive geospatial visualization dashboard",
+      "tech_stack": [
+        "Python",
+        "SQL",
+        "XGBoost",
+        "Streamlit",
+        "Plotly"
+      ],
+      "github_url": "https://github.com/jonathanrao99",
+      "impact": "Delivered actionable geospatial insights and predictive risk scoring across 1M+ data points"
+    },
+    {
+      "name": "Brain Tumor Detection (Deep Learning)",
+      "description": "CNN-based MRI classification pipeline using transfer learning on medical imaging data",
+      "tech_stack": [
+        "Python",
+        "TensorFlow",
+        "OpenCV",
+        "Keras"
+      ],
+      "github_url": "https://github.com/jonathanrao99",
+      "impact": "86.6% accuracy on medical imaging classification using MobileNetV2 transfer learning"
+    }
+  ],
+  "work_preferences": {
+    "target_locations": [
+      "Houston TX",
+      "Austin TX",
+      "Dallas TX",
+      "Remote",
+      "New York NY",
+      "San Francisco CA",
+      "Seattle WA"
+    ],
+    "remote_preference": "open_to_all",
+    "employment_type": [
+      "full_time"
+    ],
+    "requires_sponsorship": false,
+    "willing_to_relocate": true,
+    "visa_status": "Authorized to work in the U.S. without sponsorship"
+  },
+  "salary": {
+    "target_min_usd": 95000,
+    "target_max_usd": 135000,
+    "form_fill_strategy": "top_of_range_plus_10pct",
+    "_note": "For form fields asking expected salary, submit 148500 (135k + 10%). Never disclose target_min."
+  },
+  "dealbreakers": [
+    "requires_5_plus_years",
+    "requires_security_clearance",
+    "contract_1099_only",
+    "commission_only",
+    "no_tech_role",
+    "requires_relocation_outside_preferences",
+    "no_data_or_engineering_component"
+  ],
+  "ai_scoring_signals": {
+    "_note": "Used by filter agent to pre-score before Claude. Saves tokens on obvious matches/rejects.",
+    "strong_match_keywords": [
+      "machine learning",
+      "data science",
+      "python",
+      "ETL",
+      "analytics",
+      "NLP",
+      "deep learning",
+      "SQL",
+      "dashboard",
+      "pipeline",
+      "full stack",
+      "AI",
+      "forecasting",
+      "computer vision",
+      "TensorFlow",
+      "cloud",
+      "power bi",
+      "tableau",
+      "data engineering",
+      "predictive"
+    ],
+    "weak_match_keywords": [
+      "embedded systems",
+      "hardware",
+      "iOS",
+      "Android native",
+      "game development",
+      "pure QA",
+      "manual testing only"
+    ],
+    "instant_reject_keywords": [
+      "10+ years",
+      "8+ years",
+      "7+ years",
+      "TS/SCI",
+      "Top Secret",
+      "commission only",
+      "1099",
+      "insurance sales",
+      "financial advisor",
+      "requires PhD"
+    ],
+    "bonus_signals": [
+      "startup",
+      "Series A",
+      "Series B",
+      "AI-first",
+      "data-driven",
+      "remote-first",
+      "new grad welcome",
+      "entry level",
+      "0-2 years",
+      "recent graduate",
+      "MS preferred"
+    ]
+  },
+  "blacklisted_companies": [],
+  "preferred_company_types": [
+    "ai_ml_company",
+    "tech_startup",
+    "mid_size_tech",
+    "faang_adjacent",
+    "data_analytics_firm"
+  ],
+  "interests": [
+    "AI/ML product development",
+    "Autonomous systems and agents",
+    "Data engineering at scale",
+    "Full-stack analytics platforms",
+    "Predictive modeling for business impact"
+  ],
+  "application_questions": {
+    "why_this_company_template": "I'm drawn to {company} because of its work in {specific_area}. My background building production ML systems — including a forecasting model hitting ~92% accuracy and ETL pipelines that cut operational errors by 70% — aligns directly with the {role}. I want to build systems that have measurable impact, and {company} is where I want to do that.",
+    "biggest_strength": "I close the gap between research and production. I've shipped ML models, ETL pipelines, and full-stack dashboards in real working environments — not just academic settings. I move fast, document well, and care deeply about whether things actually work in production.",
+    "biggest_weakness": "I tend to want to understand systems deeply before modifying them, which can slow initial ramp-up. I've gotten much better at balancing thoroughness with speed and knowing when it's fine to build on top of something without understanding every layer.",
+    "where_do_you_see_yourself": "In 5 years I want to be a senior engineer or lead data scientist who has shipped multiple high-impact ML systems end-to-end — not just models, but the pipelines, APIs, and dashboards that make them useful in production.",
+    "why_data_science": "I'm drawn to problems where the answer isn't obvious until you look at the data. Building the NYC collision risk model across 1M+ records and surfacing patterns that weren't visible before — that's what gets me excited. I want to do that at scale.",
+    "tell_me_about_yourself": "I'm a Data Science MS candidate at Texas A&M finishing in 2026. Over the last two years I've built in production — ETL pipelines that cut operational errors by 70%, full-stack data integrations, and ML models with real accuracy benchmarks. My strength is connecting data science to engineering: I don't just build models, I build the systems that make those models useful.",
+    "work_authorization": "I am authorized to work in the United States without sponsorship.",
+    "veteran_status": "I am not a veteran.",
+    "disability_status": "I do not have a disability.",
+    "gender": "Male",
+    "ethnicity": "Decline to state",
+    "race": "Decline to state",
+    "how_did_you_hear": "Online job board",
+    "cover_letter_hook": "As a Data Science MS candidate at Texas A&M with production experience building ML pipelines, ETL systems, and full-stack analytics platforms, I'm excited to bring both technical depth and a track record of measurable impact to {company}."
+  }
+}

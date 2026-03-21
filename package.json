@@ -1,0 +1,15 @@
+{
+  "name": "jobai",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,magenta \"./scripts/dev-api.sh\" \"npm run dev --prefix frontend\"",
+    "dev:api": "./scripts/dev-api.sh",
+    "dev:web": "npm run dev --prefix frontend",
+    "test": "./.venv/bin/python -m pytest tests -q",
+    "lint:backend": "./.venv/bin/python -m ruff check backend",
+    "build:frontend": "npm run build --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
