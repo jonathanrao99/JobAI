@@ -23,10 +23,28 @@ from loguru import logger
 from pydantic import BaseModel
 
 from backend.db.client import db
+from backend.utils.salary_parse import parse_salary_range_from_text
 
 router = APIRouter()
 
 _SEARCH_MAX_LEN = 120
+
+
+def _enrich_job_salary_fields(job: Optional[dict]) -> Optional[dict]:
+    """Fill salary_min/max from description when DB columns are empty (legacy rows)."""
+    if not job:
+        return job
+    if job.get("salary_min") is not None or job.get("salary_max") is not None:
+        return job
+    sm, sx = parse_salary_range_from_text(job.get("description") or "")
+    if sm is None and sx is None:
+        return job
+    enriched = dict(job)
+    if sm is not None:
+        enriched["salary_min"] = sm
+    if sx is not None:
+        enriched["salary_max"] = sx
+    return enriched
 
 
 def _sanitize_search_term(raw: Optional[str]) -> Optional[str]:
@@ -339,6 +357,7 @@ async def create_manual_job(body: ManualJobCreate, background_tasks: BackgroundT
     client = db()
 
     dedup = hashlib.sha256(f"{body.company}|{body.title}|{body.location or ''}".lower().encode()).hexdigest()
+    sm, sx = parse_salary_range_from_text(body.description or "")
     row = {
         "title": body.title,
         "company": body.company,
@@ -352,6 +371,10 @@ async def create_manual_job(body: ManualJobCreate, background_tasks: BackgroundT
         "ai_score": 8,
         "ai_reason": "Manually added by user",
     }
+    if sm is not None:
+        row["salary_min"] = sm
+    if sx is not None:
+        row["salary_max"] = sx
     try:
         result = client.table("jobs").upsert(row, on_conflict="dedup_hash").execute()
         job_row = result.data[0] if result.data else None
@@ -406,7 +429,7 @@ async def get_jobs(
             .execute()
         )
 
-        rows = result.data or []
+        rows = [_enrich_job_salary_fields(r) for r in (result.data or [])]
         total = getattr(result, "count", None)
         total = int(total) if total is not None else len(rows)
         return {
@@ -433,7 +456,7 @@ async def get_job(job_id: str):
         if not result.data:
             raise HTTPException(status_code=404, detail="Job not found")
 
-        return result.data
+        return _enrich_job_salary_fields(result.data)
 
     except HTTPException:
         raise

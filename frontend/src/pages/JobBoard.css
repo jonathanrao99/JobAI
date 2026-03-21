@@ -1,0 +1,441 @@
+/* Job Board — ApplyNxt-style layout, dark theme */
+
+.job-board-page {
+  --border-tertiary: #21262d;
+  --border-secondary: #30363d;
+  --bg-secondary: var(--bg-raised);
+  padding: 32px 40px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.job-board-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.job-board-title {
+  font-size: 28px;
+  font-weight: 700;
+  margin: 0 0 4px 0;
+  color: var(--text-primary);
+}
+
+.job-board-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+/* Time tabs */
+.job-board-time-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.job-board-time-tab {
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-tertiary);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.job-board-time-tab:hover {
+  border-color: var(--border-secondary);
+  color: var(--text-primary);
+}
+
+.job-board-time-tab.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Search + selects row — one line: narrow search + Domain / Work Type / Level / Industry */
+.job-board-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.job-board-search {
+  flex: 0 1 240px;
+  min-width: 140px;
+  max-width: 280px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-tertiary);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.job-board-search:focus {
+  border-color: var(--border-secondary);
+}
+
+.job-board-select {
+  flex: 0 0 auto;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-tertiary);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 6px 32px 6px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 10px;
+  outline: none;
+}
+
+.job-board-select:hover,
+.job-board-select:focus {
+  border-color: var(--border-secondary);
+}
+
+.job-board-select option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+/* Card */
+.job-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-tertiary);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 6px;
+}
+
+.job-card:hover {
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.job-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.job-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.job-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.chevron-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 2px 4px;
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  line-height: 1;
+}
+
+.chevron-btn.open {
+  transform: rotate(180deg);
+}
+
+.job-card-actions-top {
+  flex-shrink: 0;
+}
+
+.job-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 3px;
+}
+
+.job-meta {
+  font-size: 13px;
+  color: var(--text-muted);
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.meta-sep {
+  color: var(--border-secondary);
+  user-select: none;
+}
+
+.job-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.job-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.job-certs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* Pills */
+.pill {
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.pill-worktype {
+  background: #1e293b;
+  color: #94a3b8;
+  border-radius: 4px;
+}
+
+.pill-remote {
+  background: #14532d;
+  color: #86efac;
+  border-radius: 4px;
+}
+
+.pill-salary {
+  background: #14532d;
+  color: #86efac;
+  border-radius: 4px;
+}
+
+.pill-industry {
+  background: #2e1065;
+  color: #c4b5fd;
+  border-radius: 4px;
+}
+
+.pill-cert {
+  background: #451a03;
+  color: #fbbf24;
+  border-radius: 4px;
+}
+
+.skill-chip {
+  background: #1e293b;
+  color: #64748b;
+  border-radius: 3px;
+  font-size: 11px;
+  padding: 2px 8px;
+  font-weight: 500;
+  display: inline-block;
+}
+
+/* Buttons */
+.btn-add-job {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 7px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-add-job:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.btn-added {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border-tertiary);
+  padding: 7px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: default;
+}
+
+.btn-apply {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+  display: block;
+  text-align: right;
+  margin-top: 0;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.btn-apply:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+/* Expanded */
+.job-expanded {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-tertiary);
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 3fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.job-desc-col {
+  min-width: 0;
+}
+
+.job-desc-col h4,
+.job-details-col h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 10px 0;
+}
+
+.job-desc-scroll {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.job-desc-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.job-details-col {
+  border-left: 1px solid var(--border-tertiary);
+  padding-left: 20px;
+  min-width: 0;
+}
+
+.detail-row {
+  margin-bottom: 8px;
+}
+
+.detail-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.detail-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 1px;
+}
+
+.detail-job-id {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+}
+
+.show-more-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 6px 0 0 0;
+  display: inline;
+}
+
+.job-board-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+.job-board-load-more button {
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--border-tertiary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.job-board-load-more button:hover {
+  border-color: var(--border-secondary);
+}
+
+.job-board-empty,
+.job-board-loading {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  border: 1px solid var(--border-tertiary);
+}
+
+.job-board-refresh {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+  .job-expanded {
+    grid-template-columns: 1fr;
+  }
+
+  .job-details-col {
+    border-left: none;
+    border-top: 1px solid var(--border-tertiary);
+    padding-left: 0;
+    padding-top: 16px;
+  }
+}

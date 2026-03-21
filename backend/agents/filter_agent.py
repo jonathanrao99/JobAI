@@ -19,6 +19,7 @@ from dateutil import parser as dateparser
 
 from backend.utils.llm_client import call_llm, parse_json_response
 from backend.utils.dedup import pre_filter_by_keywords
+from backend.utils.salary_parse import parse_salary_range_from_text
 from backend.prompts.filter_prompt import FILTER_SYSTEM_PROMPT, build_filter_prompt
 from backend.db.client import db
 
@@ -145,6 +146,9 @@ async def _run_all_batches(batches: list[list[dict]], profile: dict, total_batch
     return flat
 
 
+JOB_DESCRIPTION_DB_MAX = 50_000
+
+
 def save_scored_jobs_to_db(scored_jobs: list[dict]) -> dict:
     """
     Write scored jobs to Supabase jobs table.
@@ -157,11 +161,21 @@ def save_scored_jobs_to_db(scored_jobs: list[dict]) -> dict:
 
     for job in scored_jobs:
         try:
+            desc_raw = job.get("description") or ""
+            salary_min = _safe_int(job.get("salary_min"))
+            salary_max = _safe_int(job.get("salary_max"))
+            if salary_min is None and salary_max is None:
+                sm, sx = parse_salary_range_from_text(desc_raw)
+                if sm is not None:
+                    salary_min = sm
+                if sx is not None:
+                    salary_max = sx
+
             row = {
                 "title": job.get("title", ""),
                 "company": job.get("company", ""),
                 "location": job.get("location", ""),
-                "description": (job.get("description") or "")[:5000],
+                "description": desc_raw[:JOB_DESCRIPTION_DB_MAX],
                 "job_url": job.get("job_url", ""),
                 "source_board": job.get("source_board", "unknown"),
                 "ats_platform": job.get("ats_platform"),
@@ -169,8 +183,8 @@ def save_scored_jobs_to_db(scored_jobs: list[dict]) -> dict:
                 "ai_score": job.get("ai_score"),
                 "ai_verdict": job.get("ai_verdict"),
                 "ai_reason": job.get("ai_reason"),
-                "salary_min": _safe_int(job.get("salary_min")),
-                "salary_max": _safe_int(job.get("salary_max")),
+                "salary_min": salary_min,
+                "salary_max": salary_max,
                 "is_remote": bool(job.get("is_remote", False)),
                 # Some scrapers (or upstream parsing) may produce "nan"/"".
                 # Supabase will reject those for timestamp columns, so we normalize to None.

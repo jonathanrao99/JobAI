@@ -131,14 +131,37 @@ export function useTailorResume() {
 
 // ── Applications ──────────────────────────────────────────────────────
 
-export function useApplications(status) {
+export function useApplications(status, { limit = 100 } = {}) {
   const params = new URLSearchParams();
   if (status) params.set("status", status);
-  params.set("limit", "100");
+  params.set("limit", String(Math.min(limit, 200)));
 
   return useQuery({
-    queryKey: ["applications", status],
+    queryKey: ["applications", status, limit],
     queryFn: () => api(`/api/applications?${params}`),
+  });
+}
+
+/** All application job_ids (paginated GET) for Job Board "Added ✓" state. */
+export function useApplicationJobIds() {
+  return useQuery({
+    queryKey: ["applications", "jobIds"],
+    queryFn: async () => {
+      const ids = new Set();
+      let offset = 0;
+      const limit = 200;
+      for (;;) {
+        const data = await api(`/api/applications?limit=${limit}&offset=${offset}`);
+        const apps = data.applications || [];
+        for (const a of apps) {
+          if (a.job_id) ids.add(a.job_id);
+        }
+        if (apps.length < limit) break;
+        offset += limit;
+      }
+      return ids;
+    },
+    staleTime: 30_000,
   });
 }
 
@@ -153,6 +176,7 @@ export function useCreateApplication() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["applications"] });
+      qc.invalidateQueries({ queryKey: ["applications", "jobIds"] });
       qc.invalidateQueries({ queryKey: ["jobs"] });
     },
   });
