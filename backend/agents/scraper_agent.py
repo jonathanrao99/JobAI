@@ -2,11 +2,10 @@
 backend/agents/scraper_agent.py
 =================================
 Orchestrates all job scraping sources:
-  1. jobspy     — LinkedIn, Indeed, ZipRecruiter, Google Jobs (sites + queries from config.yaml)
+  1. jobspy     — LinkedIn, Indeed, ZipRecruiter, Google Jobs, Dice (sites + queries from config.yaml)
   2. Adzuna/Jooble — global API feeds when keys are set in config.yaml job_boards
   3. ATS        — Greenhouse, Lever, Ashby, Workday, SmartRecruiters (from companies/ YAMLs)
-  4. Dice       — via Apify actor (shahidirfan/dice-job-scraper)
-  5. Glassdoor  — via Apify actor (silentflow/glassdoor-jobs-scraper-ppr)
+  4. Dice       — also via Apify actor when APIFY_API_TOKEN set (shahidirfan/dice-job-scraper)
 
 Then deduplicates, runs filter agent, and writes to Supabase.
 """
@@ -101,6 +100,7 @@ def run_scraper_agent(dry_run: bool = False) -> dict:
         "indeed",
         "zip_recruiter",
         "google",
+        "dice",
     ]
     results_per_query = int(sa.get("results_per_query", RESULTS_PER_QUERY))
     hours_old = int(sa.get("hours_old", HOURS_OLD))
@@ -129,10 +129,6 @@ def run_scraper_agent(dry_run: bool = False) -> dict:
     dice_jobs = _scrape_dice(search_queries, results_per_query)
     all_jobs.extend(dice_jobs)
     logger.info(f"   Dice (Apify): {len(dice_jobs)} raw jobs")
-
-    glassdoor_jobs = _scrape_glassdoor_apify(search_queries, results_per_query)
-    all_jobs.extend(glassdoor_jobs)
-    logger.info(f"   Glassdoor (Apify): {len(glassdoor_jobs)} raw jobs")
 
     logger.info(f"   Total raw: {len(all_jobs)} jobs")
 
@@ -210,7 +206,7 @@ def _scrape_with_jobspy(
         logger.error("python-jobspy not installed. Run: pip install python-jobspy")
         return []
 
-    allowed = {"linkedin", "indeed", "zip_recruiter", "google", "glassdoor", "bayt"}
+    allowed = {"linkedin", "indeed", "zip_recruiter", "google", "dice", "bayt"}
     sites = [s for s in site_names if s in allowed] or ["linkedin", "indeed", "zip_recruiter", "google"]
 
     all_jobs = []
@@ -338,69 +334,6 @@ def _scrape_dice(search_queries: list[str], results_wanted: int) -> list[dict]:
         except Exception as e:
             logger.warning(f"   Dice error for '{query}': {e}")
             continue
-
-    return all_jobs
-
-
-# ── Glassdoor scraping via Apify ─────────────────────────────────────────
-
-def _scrape_glassdoor_apify(search_queries: list[str], max_items: int) -> list[dict]:
-    """Scrape Glassdoor via Apify actor (silentflow/glassdoor-jobs-scraper-ppr).
-
-    Pay-per-result actor ($2.45/1K). Free trial must be activated at
-    https://console.apify.com/actors before results are returned.
-    """
-    if not settings.apify_api_token:
-        logger.debug("   Glassdoor: no APIFY_API_TOKEN — skipping")
-        return []
-
-    all_jobs: list[dict] = []
-    seen_urls: set[str] = set()
-
-    for query in search_queries:
-        try:
-            items = _run_apify_actor(
-                "silentflow/glassdoor-jobs-scraper-ppr",
-                {
-                    "keyword": query,
-                    "country": "US",
-                    "maxItems": max_items,
-                    "fromAge": "7",
-                    "proxy": {"useApifyProxy": True},
-                },
-            )
-            for item in items:
-                url = item.get("job_url") or item.get("url") or ""
-                if not url or url in seen_urls:
-                    continue
-                seen_urls.add(url)
-
-                loc = item.get("location") or ""
-                all_jobs.append({
-                    "title": item.get("job_title") or item.get("title") or "",
-                    "company": item.get("company_name") or "",
-                    "location": loc,
-                    "description": (item.get("description") or item.get("job_description") or "")[:3000],
-                    "job_url": url,
-                    "source_board": "glassdoor",
-                    "is_remote": "remote" in loc.lower(),
-                    "salary_min": None,
-                    "salary_max": None,
-                    "posted_at": item.get("posted_date") or "",
-                    "dedup_hash": make_dedup_hash(
-                        item.get("company_name") or "",
-                        item.get("job_title") or item.get("title") or "",
-                        loc,
-                    ),
-                })
-
-            time.sleep(1)
-        except Exception as e:
-            logger.warning(f"   Glassdoor error for '{query}': {e}")
-            continue
-
-    if not all_jobs:
-        logger.info("   Glassdoor returned 0 jobs — free trial may need activation at console.apify.com")
 
     return all_jobs
 

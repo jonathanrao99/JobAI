@@ -288,3 +288,14 @@
     width: 100%;
   }
 }
+
+.profile-input--error {
+  border-color: var(--red, #e74c3c);
+}
+
+.profile-field-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--red, #e74c3c);
+}

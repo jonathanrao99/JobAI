@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { useProfile, useSaveProfile } from "../hooks/useJobs";
 import "./Profile.css";
 
@@ -102,8 +103,24 @@ export default function Profile() {
     }
   }, [save.isSuccess, save.data]);
 
+  const [errors, setErrors] = useState({});
+
+  const validate = () => {
+    const errs = {};
+    if (!personal.phone.trim()) errs.phone = "Phone is required.";
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(personal.email.trim())) errs.email = "Enter a valid email address.";
+    return errs;
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    const errs = validate();
+    setErrors(errs);
+    if (Object.keys(errs).length) {
+      toast.error("Fix the highlighted fields before saving.");
+      return;
+    }
     const payload = {
       personal: {
         full_name: personal.full_name.trim(),
@@ -141,7 +158,10 @@ export default function Profile() {
         impact: p.impact.trim(),
       })),
     };
-    save.mutate(payload);
+    save.mutate(payload, {
+      onSuccess: () => toast.success("Profile saved — next scrape will use updated preferences."),
+      onError: (err) => toast.error(err?.message || "Save failed."),
+    });
   };
 
   const eduEmpty = education.every(
@@ -208,11 +228,15 @@ export default function Profile() {
                 </label>
                 <input
                   required
-                  className="profile-input"
+                  className={`profile-input${errors.phone ? " profile-input--error" : ""}`}
                   value={personal.phone}
-                  onChange={(e) => setPersonal((p) => ({ ...p, phone: e.target.value }))}
+                  onChange={(e) => {
+                    setPersonal((p) => ({ ...p, phone: e.target.value }));
+                    if (errors.phone) setErrors((prev) => ({ ...prev, phone: undefined }));
+                  }}
                   placeholder="(555) 123-4567"
                 />
+                {errors.phone && <span className="profile-field-error">{errors.phone}</span>}
               </div>
               <div>
                 <label className="profile-label">
@@ -221,11 +245,15 @@ export default function Profile() {
                 <input
                   required
                   type="email"
-                  className="profile-input"
+                  className={`profile-input${errors.email ? " profile-input--error" : ""}`}
                   value={personal.email}
-                  onChange={(e) => setPersonal((p) => ({ ...p, email: e.target.value }))}
+                  onChange={(e) => {
+                    setPersonal((p) => ({ ...p, email: e.target.value }));
+                    if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+                  }}
                   placeholder="you@example.com"
                 />
+                {errors.email && <span className="profile-field-error">{errors.email}</span>}
               </div>
               <div>
                 <label className="profile-label">LinkedIn</label>
@@ -563,18 +591,6 @@ export default function Profile() {
             </div>
           </div>
         </div>
-
-        {save.isError && (
-          <div className="profile-alert profile-alert--error" style={{ marginBottom: 16 }}>
-            {save.error?.message || "Save failed"}
-          </div>
-        )}
-
-        {save.isSuccess && (
-          <div className="profile-alert profile-alert--ok" style={{ marginBottom: 16 }}>
-            Profile saved.
-          </div>
-        )}
 
         <div className="profile-save-bar">
           <button type="submit" className="profile-save-btn" disabled={save.isPending}>

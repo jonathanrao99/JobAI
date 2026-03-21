@@ -1,10 +1,5 @@
-import { useStats, useJobs, useTriggerScrape } from "../hooks/useJobs";
-
-const verdictColor = {
-  APPLY: { bg: "var(--green-dim)", color: "var(--green)", border: "var(--green)" },
-  MAYBE: { bg: "var(--yellow-dim)", color: "var(--yellow)", border: "var(--yellow)" },
-  SKIP:  { bg: "var(--red-dim)",    color: "var(--red)",    border: "var(--red)" },
-};
+import { useState, useRef, useEffect } from "react";
+import { useStats, useJobs, useTriggerScrape, useAgentRuns } from "../hooks/useJobs";
 
 function StatCard({ label, value, sub, color }) {
   return (
@@ -71,9 +66,59 @@ function TopJobs({ jobs }) {
 }
 
 export default function Dashboard() {
-  const { data: stats, isLoading: statsLoading } = useStats();
-  const { data: topApply } = useJobs({ verdict: "APPLY", limit: 10 });
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useStats();
+  const { data: topApply } = useJobs({ verdict: "APPLY", minScore: 7, limit: 10 });
   const scrape = useTriggerScrape();
+  const { data: runsPayload, refetch: refetchRuns } = useAgentRuns(15);
+
+  const [dryRun, setDryRun] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [polling, setPolling] = useState(false);
+  const prevTotal = useRef(stats?.total || 0);
+  const logEnd = useRef(null);
+
+  const addLog = (text, type = "info") => {
+    const ts = new Date().toLocaleTimeString();
+    setLogs((prev) => [...prev, { text: `[${ts}] ${text}`, type }]);
+  };
+
+  const handleScrape = () => {
+    addLog(dryRun ? "Starting dry-run scrape..." : "Starting full scrape...");
+    scrape.mutate(dryRun, {
+      onSuccess: (res) => {
+        const extra = res?.task_id ? ` Celery task ${res.task_id}` : "";
+        addLog(`Scrape ${res?.status || "ok"} — ${res?.message || "started"}${extra}`, "success");
+        prevTotal.current = stats?.total || 0;
+        setPolling(true);
+        refetchRuns();
+      },
+      onError: (e) => addLog(`Failed to trigger: ${e.message}`, "error"),
+    });
+  };
+
+  useEffect(() => {
+    if (!polling) return;
+    const interval = setInterval(async () => {
+      const result = await refetchStats();
+      const newTotal = result.data?.total || 0;
+      if (newTotal > prevTotal.current) {
+        addLog(`New jobs detected: ${newTotal - prevTotal.current} added (total: ${newTotal})`, "success");
+        prevTotal.current = newTotal;
+      } else {
+        addLog(`Polling... (${newTotal} total jobs)`);
+      }
+    }, 15000);
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      setPolling(false);
+      addLog("Polling stopped (5-min window elapsed).");
+    }, 300000);
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  }, [polling, refetchStats]);
+
+  useEffect(() => {
+    logEnd.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
 
   const s = stats || { total: 0, by_verdict: {}, avg_score: 0, remote_count: 0, by_source: {} };
 
@@ -87,28 +132,7 @@ export default function Dashboard() {
             Job search overview and quick actions
           </p>
         </div>
-        <button
-          onClick={() => scrape.mutate(false)}
-          disabled={scrape.isPending}
-          style={{
-            padding: "10px 24px", borderRadius: 8, border: "none", cursor: "pointer",
-            background: scrape.isPending ? "var(--border)" : "var(--accent)",
-            color: "#fff", fontWeight: 600, fontSize: 13,
-            opacity: scrape.isPending ? 0.6 : 1, transition: "all 0.15s",
-          }}
-        >
-          {scrape.isPending ? "Starting..." : scrape.isSuccess ? "✓ Scrape Running" : "⚡ Run Scrape"}
-        </button>
       </div>
-
-      {scrape.isSuccess && (
-        <div style={{
-          background: "var(--green-dim)", border: "1px solid var(--green)", borderRadius: 8,
-          padding: "12px 20px", marginBottom: 24, fontSize: 13, color: "var(--green)",
-        }}>
-          Scrape started in background. Jobs will appear in a few minutes. The page auto-refreshes.
-        </div>
-      )}
 
       {/* Stat cards */}
       <div style={{ display: "flex", gap: 16, marginBottom: 32, flexWrap: "wrap" }}>
@@ -120,30 +144,10 @@ export default function Dashboard() {
         <StatCard label="Remote" value={s.remote_count || 0} color="var(--purple)" />
       </div>
 
-      {/* Source breakdown */}
-      {s.by_source && Object.keys(s.by_source).length > 0 && (
-        <div style={{
-          background: "var(--bg-raised)", borderRadius: 12, padding: "20px 24px",
-          border: "1px solid var(--border)", marginBottom: 32,
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Jobs by Source</div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {Object.entries(s.by_source).sort((a, b) => b[1] - a[1]).map(([src, count]) => (
-              <div key={src} style={{
-                padding: "6px 14px", borderRadius: 20,
-                background: "var(--bg-hover)", fontSize: 12, color: "var(--text-secondary)",
-              }}>
-                {src} <span style={{ fontWeight: 700, color: "var(--text-primary)", marginLeft: 4 }}>{count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Top APPLY jobs */}
       <div style={{
         background: "var(--bg-surface)", borderRadius: 12, padding: 24,
-        border: "1px solid var(--border)",
+        border: "1px solid var(--border)", marginBottom: 32,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>Top Matches</div>
@@ -156,6 +160,144 @@ export default function Dashboard() {
         </div>
         <TopJobs jobs={topApply?.jobs} />
       </div>
+
+      {/* ── Scraper Control ─────────────────────────────── */}
+      <div style={{
+        display: "flex", gap: 16, marginBottom: 24, flexWrap: "wrap",
+      }}>
+        <div style={{
+          flex: "1 1 340px", background: "var(--bg-raised)", borderRadius: 12,
+          padding: 24, border: "1px solid var(--border)",
+        }}>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Scraper Agent</div>
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.6 }}>
+            Scrapes job boards, ATS career pages, and Dice via Apify.
+            Jobs are deduplicated, scored by AI, and saved to the database.
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+            <button
+              onClick={handleScrape}
+              disabled={scrape.isPending}
+              style={{
+                padding: "10px 28px", borderRadius: 8, border: "none", cursor: "pointer",
+                background: scrape.isPending ? "var(--border)" : "var(--accent)",
+                color: "#fff", fontWeight: 600, fontSize: 13,
+              }}
+            >
+              {scrape.isPending ? "Starting…" : "⚡ Run Scrape"}
+            </button>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--text-secondary)", cursor: "pointer" }}>
+              <input
+                type="checkbox" checked={dryRun}
+                onChange={(e) => setDryRun(e.target.checked)}
+                style={{ accentColor: "var(--accent)" }}
+              />
+              Dry run
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Run history table */}
+      <div style={{
+        marginBottom: 24, background: "var(--bg-raised)", borderRadius: 12,
+        border: "1px solid var(--border)", overflow: "hidden",
+      }}>
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          padding: "12px 20px", borderBottom: "1px solid var(--border)",
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>Recent Scraper Runs</div>
+          <button
+            type="button" onClick={() => refetchRuns()}
+            style={{
+              padding: "4px 12px", borderRadius: 6, fontSize: 11,
+              background: "var(--bg-hover)", color: "var(--text-muted)",
+              border: "none", cursor: "pointer",
+            }}
+          >
+            ↻ Refresh
+          </button>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+                <th style={{ padding: "10px 16px" }}>Started</th>
+                <th style={{ padding: "10px 16px" }}>Status</th>
+                <th style={{ padding: "10px 16px" }}>Processed</th>
+                <th style={{ padding: "10px 16px" }}>Saved</th>
+                <th style={{ padding: "10px 16px" }}>Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(runsPayload?.runs || []).length === 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ padding: 20, color: "var(--text-muted)" }}>
+                    No runs yet. Trigger a scrape above or start the Celery worker.
+                  </td>
+                </tr>
+              ) : (
+                (runsPayload.runs || []).map((run) => (
+                  <tr key={run.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                    <td style={{ padding: "10px 16px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                      {run.started_at ? new Date(run.started_at).toLocaleString() : "—"}
+                    </td>
+                    <td style={{ padding: "10px 16px", fontWeight: 600 }}>{run.status}</td>
+                    <td style={{ padding: "10px 16px" }}>{run.items_processed ?? "—"}</td>
+                    <td style={{ padding: "10px 16px" }}>{run.items_succeeded ?? "—"}</td>
+                    <td style={{ padding: "10px 16px", color: "var(--red)", maxWidth: 280 }} title={run.error_message || ""}>
+                      {(run.error_message || "").slice(0, 80)}{(run.error_message || "").length > 80 ? "…" : ""}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Activity log */}
+      {logs.length > 0 && (
+        <div style={{
+          background: "var(--bg-surface)", borderRadius: 12, border: "1px solid var(--border)",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "12px 20px", borderBottom: "1px solid var(--border)",
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              Activity Log
+              {polling && <span style={{ marginLeft: 10, fontSize: 11, color: "var(--green)" }}>● Polling</span>}
+            </div>
+            <button
+              onClick={() => setLogs([])}
+              style={{
+                padding: "4px 12px", borderRadius: 6, fontSize: 11,
+                background: "var(--bg-hover)", color: "var(--text-muted)",
+                border: "none", cursor: "pointer",
+              }}
+            >
+              Clear
+            </button>
+          </div>
+          <div style={{
+            maxHeight: 220, overflow: "auto", padding: "12px 20px",
+            background: "var(--bg-base)",
+          }}>
+            {logs.map((log, i) => (
+              <div key={i} style={{
+                fontSize: 12, fontFamily: "monospace", lineHeight: 1.8,
+                color: log.type === "error" ? "var(--red)" : log.type === "success" ? "var(--green)" : "var(--text-secondary)",
+              }}>
+                {log.text}
+              </div>
+            ))}
+            <div ref={logEnd} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

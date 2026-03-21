@@ -108,7 +108,7 @@ def run_resume_agent(job: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("LLM returned non-object JSON")
 
-    # ── LaTeX / PDF ───────────────────────────────────────────────
+    # ── LaTeX → PDF (single output file) ──────────────────────────
     TAILORED_DIR.mkdir(parents=True, exist_ok=True)
     company_slug = slugify(company)[:60] or "company"
     role_slug = slugify(job_title)[:60] or "role"
@@ -119,10 +119,10 @@ def run_resume_agent(job: dict) -> dict:
     tex_content = render_latex_resume(data, exp_meta, proj_meta)
     tex_path, pdf_path = compile_pdf(tex_content, TAILORED_DIR, basename)
 
-    file_path_str = str(tex_path.resolve().relative_to(REPO_ROOT.resolve()))
     pdf_path_str = (
         str(pdf_path.resolve().relative_to(REPO_ROOT.resolve())) if pdf_path else None
     )
+    file_path_str = pdf_path_str or str(tex_path.resolve().relative_to(REPO_ROOT.resolve()))
 
     resume_id = _record_in_db(
         job_id=job.get("id"),

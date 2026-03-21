@@ -39,7 +39,7 @@ Best,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>APPLY queue</div>
-          <Link to="/pipeline" style={{ fontSize: 12, color: "var(--accent)" }}>Open pipeline →</Link>
+          <Link to="/applied" style={{ fontSize: 12, color: "var(--accent)" }}>Open pipeline →</Link>
         </div>
         {isLoading ? (
           <div style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading…</div>

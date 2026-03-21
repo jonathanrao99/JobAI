@@ -76,7 +76,11 @@ def _apply_job_filters(
     since_days: Optional[int] = None,
 ):
     if verdict:
-        query = query.eq("ai_verdict", verdict.upper())
+        # `ai_verdict` casing in DB is not guaranteed (e.g. `apply` vs `APPLY`).
+        # Use case-insensitive matching so verdict filters work reliably.
+        v = (verdict or "").strip()
+        if v:
+            query = query.ilike("ai_verdict", v)
     if source:
         query = query.eq("source_board", source)
     if min_score:
@@ -127,12 +131,30 @@ def _stats_from_rpc(client) -> Optional[dict[str, Any]]:
         bs = raw.get("by_source") or {}
         if not isinstance(bs, dict):
             bs = {}
+
+        # Normalize verdict keys to uppercase in case the RPC returns lowercase keys.
+        bv_upper: dict[str, int] = {}
+        for k, v in bv.items():
+            if k is None:
+                continue
+            try:
+                bv_upper[str(k).upper()] = int(v or 0)
+            except Exception:
+                bv_upper[str(k).upper()] = 0
+
+        logger.info(
+            "job_dashboard_stats RPC returned: "
+            f"total={raw.get('total', 0)} remote_count={raw.get('remote_count', 0)} "
+            f"by_verdict_keys={list(bv.keys())} "
+            f"APPLY={bv_upper.get('APPLY', 0)} MAYBE={bv_upper.get('MAYBE', 0)} SKIP={bv_upper.get('SKIP', 0)}"
+        )
+
         return {
             "total": int(raw.get("total", 0)),
             "by_verdict": {
-                "APPLY": int(bv.get("APPLY", 0)),
-                "MAYBE": int(bv.get("MAYBE", 0)),
-                "SKIP": int(bv.get("SKIP", 0)),
+                "APPLY": int(bv_upper.get("APPLY", 0)),
+                "MAYBE": int(bv_upper.get("MAYBE", 0)),
+                "SKIP": int(bv_upper.get("SKIP", 0)),
             },
             "by_source": {str(k): int(v) for k, v in bs.items()},
             "avg_score": float(raw.get("avg_score", 0) or 0),
@@ -255,6 +277,17 @@ async def get_job_stats():
         stats = _stats_from_rpc(client)
         if stats is None:
             stats = _stats_fallback(client)
+        else:
+            # If the RPC is partially working (e.g. verdict filters mismatched due to casing),
+            # fall back to the Python aggregation.
+            total = int(stats.get("total") or 0)
+            by_verdict = stats.get("by_verdict") or {}
+            verdict_sum = sum(int(by_verdict.get(k) or 0) for k in ("APPLY", "MAYBE", "SKIP"))
+            if total > 0 and verdict_sum == 0:
+                logger.warning(
+                    "job_dashboard_stats returned zero verdict counts; using fallback aggregation"
+                )
+                stats = _stats_fallback(client)
         return stats
     except Exception as e:
         logger.error(f"GET /jobs/stats error: {e}")
@@ -363,9 +396,8 @@ async def get_jobs(
     """Paginated job listings with optional filters."""
     try:
         client = db()
-        total = _count_jobs(client, verdict, source, search, min_score, is_remote, since_days)
 
-        query = client.table("jobs").select("*")
+        query = client.table("jobs").select("*", count="exact")
         query = _apply_job_filters(query, verdict, source, search, min_score, is_remote, since_days)
         result = (
             query.order("scraped_at", desc=True)
@@ -375,6 +407,8 @@ async def get_jobs(
         )
 
         rows = result.data or []
+        total = getattr(result, "count", None)
+        total = int(total) if total is not None else len(rows)
         return {
             "jobs": rows,
             "count": len(rows),

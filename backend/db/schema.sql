@@ -480,20 +480,14 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 SELECT json_build_object(
-  'total', (SELECT count(*)::int FROM jobs),
-  'remote_count', (SELECT count(*)::int FROM jobs WHERE is_remote IS TRUE),
-  'avg_score', COALESCE(
-    (SELECT round(avg(ai_score)::numeric, 1) FROM jobs WHERE ai_score IS NOT NULL),
-    0
+  'total', COUNT(*)::int,
+  'remote_count', COUNT(*) FILTER (WHERE is_remote IS TRUE),
+  'avg_score', COALESCE(ROUND(AVG(ai_score)::numeric, 1), 0),
+  'by_verdict', json_build_object(
+    'APPLY', COUNT(*) FILTER (WHERE COALESCE(NULLIF(lower(trim(ai_verdict)), ''), 'maybe') = 'apply'),
+    'MAYBE', COUNT(*) FILTER (WHERE COALESCE(NULLIF(lower(trim(ai_verdict)), ''), 'maybe') = 'maybe'),
+    'SKIP',  COUNT(*) FILTER (WHERE COALESCE(NULLIF(lower(trim(ai_verdict)), ''), 'maybe') = 'skip')
   ),
-  'by_verdict', COALESCE((
-    SELECT json_object_agg(v, c)
-    FROM (
-      SELECT COALESCE(NULLIF(trim(ai_verdict), ''), 'MAYBE') AS v, count(*)::int AS c
-      FROM jobs
-      GROUP BY 1
-    ) sub
-  ), '{}'::json),
   'by_source', COALESCE((
     SELECT json_object_agg(source_board, cnt)
     FROM (
@@ -504,7 +498,7 @@ SELECT json_build_object(
       LIMIT 40
     ) sub2
   ), '{}'::json)
-);
+) FROM jobs;
 $$;
 
 COMMENT ON FUNCTION public.job_dashboard_stats IS 'Aggregated job stats for JobAI dashboard.';

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useApplications, useUpdateApplicationStatus, useCreateApplication } from "../hooks/useJobs";
+import { useMemo, useState } from "react";
+import { useApplications, useUpdateApplicationStatus } from "../hooks/useJobs";
 
 const STATUS_GROUPS = [
   { key: null, label: "All" },
@@ -65,104 +65,54 @@ function StatusBadge({ status }) {
   );
 }
 
-function ApplicationRow({ app, onUpdate }) {
-  const [expanded, setExpanded] = useState(false);
-  const job = app.jobs || {};
-  const actions = NEXT_ACTIONS[app.status] || [];
+function getAppDate(app) {
+  const dt = app.applied_at || app.created_at;
+  if (!dt) return null;
+  const d = new Date(dt);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
-  return (
-    <div style={{
-      background: "var(--bg-raised)", borderRadius: 10,
-      border: "1px solid var(--border)", overflow: "hidden",
-    }}>
-      <div
-        onClick={() => setExpanded(!expanded)}
-        style={{
-          display: "flex", alignItems: "center", gap: 16,
-          padding: "16px 20px", cursor: "pointer",
-        }}
-      >
-        <div style={{
-          width: 40, height: 40, borderRadius: 10, display: "flex",
-          alignItems: "center", justifyContent: "center", fontSize: 15,
-          fontWeight: 700, flexShrink: 0,
-          background: "var(--green-dim)", color: "var(--green)",
-        }}>
-          {job.ai_score || "—"}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
-              {job.title || "Unknown Role"}
-            </span>
-            <StatusBadge status={app.status} />
-          </div>
-          <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>
-            {job.company || "—"}
-            {job.location ? ` · ${job.location}` : ""}
-            {app.applied_at && (
-              <span style={{ marginLeft: 12, color: "var(--text-muted)" }}>
-                Applied {new Date(app.applied_at).toLocaleDateString()}
-              </span>
-            )}
-          </div>
-        </div>
-        <span style={{
-          color: "var(--text-muted)", fontSize: 18, flexShrink: 0,
-          transition: "transform 0.15s", transform: expanded ? "rotate(180deg)" : "none",
-        }}>
-          ▾
-        </span>
-      </div>
-
-      {expanded && (
-        <div style={{ padding: "0 20px 20px", borderTop: "1px solid var(--border)" }}>
-          <div style={{ display: "flex", gap: 12, paddingTop: 16, flexWrap: "wrap", alignItems: "center" }}>
-            {job.job_url && (
-              <a href={job.job_url} target="_blank" rel="noopener noreferrer" style={{
-                padding: "7px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600,
-                background: "var(--accent)", color: "#fff", textDecoration: "none",
-              }}>
-                View Posting
-              </a>
-            )}
-            {actions.map((a) => (
-              <button
-                key={a.status}
-                onClick={(e) => { e.stopPropagation(); onUpdate(app.id, a.status); }}
-                style={{
-                  padding: "7px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600,
-                  border: "1px solid var(--border)", cursor: "pointer",
-                  background: (STATUS_COLOR[a.status] || STATUS_COLOR.queued).bg,
-                  color: (STATUS_COLOR[a.status] || STATUS_COLOR.queued).color,
-                }}
-              >
-                {a.label}
-              </button>
-            ))}
-          </div>
-          {app.notes && (
-            <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
-              {app.notes}
-            </div>
-          )}
-          <div style={{ marginTop: 12, display: "flex", gap: 16, fontSize: 11, color: "var(--text-muted)" }}>
-            <span>Created {new Date(app.created_at).toLocaleDateString()}</span>
-            {job.source_board && <span>Source: {job.source_board}</span>}
-            {job.is_remote && <span style={{ color: "var(--purple)" }}>Remote</span>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function fmtDate(d) {
+  if (!d) return "—";
+  return d.toLocaleDateString();
 }
 
 export default function Applied() {
-  const [statusFilter, setStatusFilter] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("applied");
+  const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+
   const { data, isLoading } = useApplications(statusFilter);
   const updateStatus = useUpdateApplicationStatus();
 
   const apps = data?.applications || [];
+
+  const filteredApps = useMemo(() => {
+    const q = (search || "").trim().toLowerCase();
+    const fromTs = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
+    const toTs = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null;
+
+    return (apps || []).filter((app) => {
+      const job = app.jobs || {};
+      const company = (job.company || "").toLowerCase();
+      const title = (job.title || "").toLowerCase();
+      const hay = `${company} ${title}`.trim();
+
+      if (q && !hay.includes(q)) return false;
+
+      if (fromTs || toTs) {
+        const d = getAppDate(app);
+        if (!d) return false;
+        const ts = d.getTime();
+        if (fromTs && ts < fromTs) return false;
+        if (toTs && ts > toTs) return false;
+      }
+
+      return true;
+    });
+  }, [apps, search, fromDate, toDate]);
 
   const handleUpdate = (appId, newStatus) => {
     updateStatus.mutate({ applicationId: appId, status: newStatus });
@@ -170,31 +120,75 @@ export default function Applied() {
 
   return (
     <div style={{ padding: "32px 40px", maxWidth: 1000, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>Applications</h1>
-      <p style={{ fontSize: 13, color: "var(--text-secondary)", marginBottom: 24 }}>
-        Track your application pipeline from queued to offer
-      </p>
+      <div style={{ marginBottom: 14 }}>
+        <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>Applied Jobs</h1>
+        <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+          {filteredApps.length} application{filteredApps.length === 1 ? "" : "s"}
+        </p>
+      </div>
 
-      {/* Status filter tabs */}
       <div style={{
-        display: "flex", gap: 6, marginBottom: 24, flexWrap: "wrap",
-        padding: "4px", background: "var(--bg-surface)", borderRadius: 10,
-        border: "1px solid var(--border)",
+        display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center",
+        marginBottom: 20,
       }}>
-        {STATUS_GROUPS.map((g) => (
-          <button
-            key={g.key || "all"}
-            onClick={() => setStatusFilter(g.key)}
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search company, title…"
+          style={{
+            flex: "1 1 260px",
+            padding: "10px 16px", borderRadius: 8, fontSize: 13,
+            background: "var(--bg-raised)", border: "1px solid var(--border)",
+            color: "var(--text-primary)", outline: "none",
+          }}
+        />
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>From</label>
+          <input
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
             style={{
-              padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-              border: "none", cursor: "pointer", transition: "all 0.15s",
-              background: statusFilter === g.key ? "var(--accent)" : "transparent",
-              color: statusFilter === g.key ? "#fff" : "var(--text-secondary)",
+              padding: "8px 10px", borderRadius: 8, fontSize: 12,
+              background: "var(--bg-raised)", border: "1px solid var(--border)",
+              color: "var(--text-primary)", outline: "none",
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>To</label>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            style={{
+              padding: "8px 10px", borderRadius: 8, fontSize: 12,
+              background: "var(--bg-raised)", border: "1px solid var(--border)",
+              color: "var(--text-primary)", outline: "none",
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <label style={{ fontSize: 12, color: "var(--text-muted)" }}>Status</label>
+          <select
+            value={statusFilter ?? "all"}
+            onChange={(e) => setStatusFilter(e.target.value === "all" ? null : e.target.value)}
+            style={{
+              padding: "9px 10px", borderRadius: 8, fontSize: 12,
+              background: "var(--bg-raised)", border: "1px solid var(--border)",
+              color: "var(--text-primary)", outline: "none",
             }}
           >
-            {g.label}
-          </button>
-        ))}
+            {STATUS_GROUPS.map((g) => (
+              <option key={g.key ?? "all"} value={g.key ?? "all"}>
+                {g.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {updateStatus.isError && (
@@ -208,19 +202,184 @@ export default function Applied() {
 
       {isLoading ? (
         <div style={{ color: "var(--text-muted)", padding: 40, textAlign: "center" }}>Loading…</div>
-      ) : apps.length === 0 ? (
+      ) : filteredApps.length === 0 ? (
         <div style={{
           textAlign: "center", padding: 60, color: "var(--text-muted)", fontSize: 14,
           background: "var(--bg-raised)", borderRadius: 12, border: "1px solid var(--border)",
         }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
-          No applications yet. Add jobs from the Job Board or Pipeline and start tracking.
+          No matching applications. Try a different status or date range.
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {apps.map((app) => (
-            <ApplicationRow key={app.id} app={app} onUpdate={handleUpdate} />
-          ))}
+        <div style={{
+          background: "var(--bg-raised)", borderRadius: 12, border: "1px solid var(--border)",
+          overflow: "hidden",
+        }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: "var(--text-muted)", borderBottom: "1px solid var(--border)" }}>
+                  <th style={{ padding: "10px 14px", width: 36 }} />
+                  <th style={{ padding: "10px 14px" }}>Company</th>
+                  <th style={{ padding: "10px 14px" }}>Job Title</th>
+                  <th style={{ padding: "10px 14px" }}>Applied</th>
+                  <th style={{ padding: "10px 14px" }}>Resume</th>
+                  <th style={{ padding: "10px 14px" }}>Link</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredApps.map((app, idx) => {
+                  const job = app.jobs || {};
+                  const expanded = expandedId === app.id;
+                  const actions = NEXT_ACTIONS[app.status] || [];
+                  const appliedDate = fmtDate(getAppDate(app));
+                  const resumeUrl = app.resume_id ? `/api/resumes/${app.resume_id}/download?format=pdf` : null;
+
+                  return (
+                    <>
+                      <tr
+                        key={app.id}
+                        style={{
+                          borderBottom: "1px solid var(--border)",
+                          background: idx % 2 === 0 ? "transparent" : "var(--bg-hover)",
+                        }}
+                      >
+                        <td style={{ padding: "12px 14px" }}>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedId(expanded ? null : app.id)}
+                            style={{
+                              width: 28, height: 28, borderRadius: 8,
+                              border: "1px solid var(--border)", cursor: "pointer",
+                              background: "var(--bg-surface)",
+                              color: "var(--text-secondary)",
+                              transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                              transition: "transform 0.15s",
+                            }}
+                            aria-label={expanded ? "Collapse" : "Expand"}
+                          >
+                            ›
+                          </button>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: "var(--text-secondary)" }}>
+                          {job.company || "—"}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)" }}>
+                              {job.title || "Unknown Role"}
+                            </span>
+                            <StatusBadge status={app.status} />
+                          </div>
+                        </td>
+                        <td style={{ padding: "12px 14px", color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+                          {appliedDate}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {resumeUrl ? (
+                            <a
+                              href={resumeUrl}
+                              style={{
+                                padding: "8px 12px",
+                                borderRadius: 8,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: "var(--green)",
+                                color: "#fff",
+                                textDecoration: "none",
+                                display: "inline-block",
+                              }}
+                            >
+                              Download
+                            </a>
+                          ) : (
+                            <span style={{ color: "var(--text-muted)" }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ padding: "12px 14px" }}>
+                          {job.job_url ? (
+                            <a
+                              href={job.job_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                padding: "8px 12px",
+                                borderRadius: 8,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                background: "var(--bg-hover)",
+                                color: "var(--blue)",
+                                border: "1px solid var(--border)",
+                                textDecoration: "none",
+                                display: "inline-block",
+                              }}
+                            >
+                              View
+                            </a>
+                          ) : (
+                            <span style={{ color: "var(--text-muted)" }}>—</span>
+                          )}
+                        </td>
+                      </tr>
+
+                      {expanded && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: 16, background: "var(--bg-base)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                              <div>
+                                <div style={{ fontSize: 12, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>
+                                  Actions
+                                </div>
+                                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                                  {actions.length ? (
+                                    actions.map((a) => (
+                                      <button
+                                        key={a.status}
+                                        type="button"
+                                        onClick={() => handleUpdate(app.id, a.status)}
+                                        style={{
+                                          padding: "8px 12px",
+                                          borderRadius: 8,
+                                          fontSize: 12,
+                                          fontWeight: 700,
+                                          border: "1px solid var(--border)",
+                                          cursor: "pointer",
+                                          background: (STATUS_COLOR[a.status] || STATUS_COLOR.queued).bg,
+                                          color: (STATUS_COLOR[a.status] || STATUS_COLOR.queued).color,
+                                        }}
+                                      >
+                                        {a.label}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <span style={{ color: "var(--text-muted)", fontSize: 12 }}>No next actions for this status.</span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div style={{ minWidth: 260 }}>
+                                <div style={{ fontSize: 12, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>
+                                  Details
+                                </div>
+                                <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6 }}>
+                                  <div>
+                                    Created {app.created_at ? new Date(app.created_at).toLocaleDateString() : "—"}
+                                  </div>
+                                  {job.source_board && <div>Source: {job.source_board}</div>}
+                                  {job.is_remote && <div style={{ color: "var(--purple)" }}>Remote</div>}
+                                  {app.notes && <div style={{ marginTop: 10, color: "var(--text-muted)" }}>{app.notes}</div>}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

@@ -1,13 +1,11 @@
 import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "react-hot-toast";
 import { useStats } from "./hooks/useJobs";
 
 import Dashboard from "./pages/Dashboard";
 import JobBoard from "./pages/JobBoard";
-import AddJob from "./pages/AddJob";
 import Applied from "./pages/Applied";
-import Pipeline from "./pages/Pipeline";
-import Agents from "./pages/Agents";
 import Analytics from "./pages/Analytics";
 import Outreach from "./pages/Outreach";
 import Profile from "./pages/Profile";
@@ -21,31 +19,12 @@ const queryClient = new QueryClient({
   },
 });
 
-const navSections = [
-  {
-    label: null,
-    items: [
-      { to: "/", label: "Dashboard", icon: "◈" },
-    ],
-  },
-  {
-    label: "JOBS",
-    items: [
-      { to: "/board", label: "Job Board", icon: "⬡" },
-      { to: "/add-job", label: "Add Job", icon: "＋" },
-      { to: "/applied", label: "Applied", icon: "✓" },
-      { to: "/profile", label: "Profile", icon: "◇" },
-    ],
-  },
-  {
-    label: "TOOLS",
-    items: [
-      { to: "/pipeline", label: "Pipeline", icon: "⚙" },
-      { to: "/agents", label: "Agents", icon: "⚡" },
-      { to: "/analytics", label: "Analytics", icon: "∿" },
-      { to: "/outreach", label: "Outreach", icon: "✉" },
-    ],
-  },
+const mainNav = [
+  { to: "/", label: "Dashboard", icon: "◈" },
+  { to: "/board", label: "Job Board", icon: "⬡" },
+  { to: "/applied", label: "Pipeline", icon: "⚙" },
+  { to: "/outreach", label: "Outreach", icon: "✉" },
+  { to: "/analytics", label: "Analytics", icon: "∿" },
 ];
 
 function StatusIndicator() {
@@ -72,6 +51,27 @@ function StatusIndicator() {
   );
 }
 
+function NavItem({ to, label, icon, end }) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      style={({ isActive }) => ({
+        display: "flex", alignItems: "center", gap: 10,
+        padding: "9px 20px", textDecoration: "none",
+        color: isActive ? "var(--accent)" : "var(--text-secondary)",
+        background: isActive ? "var(--accent-glow)" : "transparent",
+        borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+        fontSize: 13, fontWeight: isActive ? 600 : 400,
+        transition: "all 0.15s",
+      })}
+    >
+      <span style={{ width: 18, textAlign: "center", fontSize: 14 }}>{icon}</span>
+      {label}
+    </NavLink>
+  );
+}
+
 function Layout({ children }) {
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -85,37 +85,12 @@ function Layout({ children }) {
           <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "monospace" }}>v1.0</div>
         </div>
         <div style={{ padding: "8px 0", flex: 1, overflowY: "auto" }}>
-          {navSections.map((section, si) => (
-            <div key={si}>
-              {section.label && (
-                <div style={{
-                  fontSize: 10, color: "var(--text-muted)", letterSpacing: 1.5,
-                  padding: "16px 20px 6px", fontWeight: 600,
-                }}>
-                  {section.label}
-                </div>
-              )}
-              {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === "/"}
-                  style={({ isActive }) => ({
-                    display: "flex", alignItems: "center", gap: 10,
-                    padding: "9px 20px", textDecoration: "none",
-                    color: isActive ? "var(--accent)" : "var(--text-secondary)",
-                    background: isActive ? "var(--accent-glow)" : "transparent",
-                    borderLeft: isActive ? "2px solid var(--accent)" : "2px solid transparent",
-                    fontSize: 13, fontWeight: isActive ? 600 : 400,
-                    transition: "all 0.15s",
-                  })}
-                >
-                  <span style={{ width: 18, textAlign: "center", fontSize: 14 }}>{item.icon}</span>
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
+          {mainNav.map((item) => (
+            <NavItem key={item.to} {...item} end={item.to === "/"} />
           ))}
+        </div>
+        <div style={{ borderTop: "1px solid var(--border)" }}>
+          <NavItem to="/profile" label="Profile" icon="◇" />
         </div>
         <StatusIndicator />
       </nav>
@@ -130,15 +105,23 @@ function Layout({ children }) {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          style: {
+            background: "var(--bg-raised)",
+            color: "var(--text-primary)",
+            border: "1px solid var(--border)",
+            fontSize: 13,
+          },
+        }}
+      />
       <BrowserRouter>
         <Layout>
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/board" element={<JobBoard />} />
-            <Route path="/add-job" element={<AddJob />} />
             <Route path="/applied" element={<Applied />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/agents" element={<Agents />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/outreach" element={<Outreach />} />
             <Route path="/profile" element={<Profile />} />
