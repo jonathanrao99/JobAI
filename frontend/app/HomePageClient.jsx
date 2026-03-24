@@ -149,12 +149,6 @@ export default function HomePageClient() {
         <div className="dash-panel__head">
           <div className="dash-panel__intro">
             <div className="dash-section-title">Scraper Agent</div>
-            <p className="dash-blurb">
-              Pulls from JobSpy, company ATS feeds, and config-driven Apify actors (e.g. Dice). Set{" "}
-              <code style={{ fontSize: 11 }}>APIFY_API_TOKEN</code> and optional{" "}
-              <code style={{ fontSize: 11 }}>scraper_agent.apify_actors</code> in{" "}
-              <code style={{ fontSize: 11 }}>config.yaml</code>. Jobs are deduplicated, scored, and saved.
-            </p>
           </div>
           <div className="dash-panel__actions">
             <button
