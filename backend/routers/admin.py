@@ -21,6 +21,22 @@ def _to_int(value, default: int = 0) -> int:
         return default
 
 
+def _count_jobs_posted_since(client, since_iso: str) -> int | None:
+    """Exact count of rows with posted_at >= since_iso (cumulative window)."""
+    try:
+        res = (
+            client.table("jobs")
+            .select("id", count="exact", head=True)
+            .gte("posted_at", since_iso)
+            .execute()
+        )
+        if getattr(res, "count", None) is not None:
+            return int(res.count)
+        return 0
+    except Exception:
+        return None
+
+
 @router.get("/ops-summary")
 async def ops_summary():
     try:
@@ -94,6 +110,16 @@ async def ops_summary():
                 # application_contacts table may not exist yet in every environment.
                 pass
 
+        now = datetime.now(UTC)
+        since_24h = (now - timedelta(hours=24)).isoformat()
+        since_72h = (now - timedelta(hours=72)).isoformat()
+        since_7d = (now - timedelta(days=7)).isoformat()
+        recency = {
+            "posted_within_24h": _count_jobs_posted_since(client, since_24h),
+            "posted_within_72h": _count_jobs_posted_since(client, since_72h),
+            "posted_within_7d": _count_jobs_posted_since(client, since_7d),
+        }
+
         return {
             "summary": {
                 "latest_scrape_at": latest_row.get("started_at"),
@@ -104,6 +130,7 @@ async def ops_summary():
                 "recency_hours": _to_int(meta.get("recency_hours")),
                 "inserted_to_db": _to_int(meta.get("inserted_to_db")),
                 "by_source": by_source,
+                "recency_buckets": recency,
                 "prepare_runs_24h": prepare_runs_24h,
                 "db_reused_24h": db_reused_24h,
                 "apify_called_24h": apify_called_24h,

@@ -158,6 +158,7 @@ export function useTriggerScrape() {
       setTimeout(() => {
         qc.invalidateQueries({ queryKey: ["stats"] });
         qc.invalidateQueries({ queryKey: ["jobs"] });
+        qc.invalidateQueries({ queryKey: ["admin", "opsSummary"] });
       }, 5000);
     },
   });

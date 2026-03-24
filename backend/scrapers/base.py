@@ -93,35 +93,6 @@ class Job:
         if self.date_scraped is None:
             self.date_scraped = datetime.now(timezone.utc)
 
-    def to_dict(self) -> dict:
-        return {
-            "job_id": self.job_id,
-            "title": self.title,
-            "company": self.company,
-            "company_size_tier": self.company_size_tier,
-            "location": self.location,
-            "usa_based": self.usa_based,
-            "remote_type": self.remote_type,
-            "visa_sponsorship": self.visa_sponsorship,
-            "salary_range": self.salary_range or "",
-            "date_posted": self.date_posted.isoformat() if self.date_posted else "",
-            "date_scraped": self.date_scraped.isoformat() if self.date_scraped else "",
-            "apply_url": self.apply_url,
-            "description": self.description,
-            "ats_platform": self.ats_platform,
-            "required_skills": ", ".join(self.required_skills),
-            "experience_level": self.experience_level,
-            "cross_day_duplicate": self.cross_day_duplicate,
-            "city": self.city,
-            "state": self.state,
-            "best_resume": self.best_resume,
-            "match_score": self.match_score,
-            "matched_keywords": ", ".join(self.matched_keywords),
-            "unmatched_keywords": ", ".join(self.unmatched_keywords),
-            "resume_suggestions": self.resume_suggestions,
-            "profile": self.profile,
-        }
-
 
 class BaseScraper(ABC):
     def __init__(self, company: dict, config: "ApplyScraperConfig"):

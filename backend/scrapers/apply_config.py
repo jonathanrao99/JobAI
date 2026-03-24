@@ -41,10 +41,6 @@ class Profile:
     max_years_required: Optional[int]
     min_match_score: int
 
-    def matches_title(self, job_title: str) -> bool:
-        title_lower = job_title.lower()
-        return any(t.lower() in title_lower for t in self.target_job_titles)
-
 
 @dataclass
 class JobBoardConfig:

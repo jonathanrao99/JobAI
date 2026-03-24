@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { useAdminOpsSummary } from "@/hooks/useJobs";
+import toast from "react-hot-toast";
+import { useAdminOpsSummary, useTriggerScrape } from "@/hooks/useJobs";
 import "./Admin.css";
 
 function StatCard({ label, value, hint }) {
@@ -46,17 +47,56 @@ function SourceTable({ rows }) {
   );
 }
 
+function fmtCount(v) {
+  if (v == null) return "—";
+  return String(v);
+}
+
 export default function AdminPage() {
-  const { data, isLoading, isError, error } = useAdminOpsSummary();
+  const { data, isLoading, isError, error, refetch } = useAdminOpsSummary();
+  const triggerScrape = useTriggerScrape();
   const summary = data?.summary || {};
   const rows = useMemo(() => summary.by_source || [], [summary.by_source]);
+  const recency = summary.recency_buckets || {};
   const latestScrapeAt = summary.latest_scrape_at ? new Date(summary.latest_scrape_at).toLocaleString() : "—";
 
   return (
     <div className="admin-page">
       <header className="admin-header">
-        <h1 className="admin-title">Admin</h1>
-        <p className="admin-subtitle">Scraper, dedup, recency, and enrichment operations overview.</p>
+        <div className="admin-header__row">
+          <div>
+            <h1 className="admin-title">Admin</h1>
+            <p className="admin-subtitle">Scraper, dedup, recency, and enrichment operations overview.</p>
+          </div>
+          <div className="admin-header__actions">
+            <button
+              type="button"
+              className="admin-btn admin-btn--secondary"
+              disabled={isLoading}
+              onClick={() => refetch()}
+            >
+              Refresh
+            </button>
+            <button
+              type="button"
+              className="admin-btn"
+              disabled={triggerScrape.isPending}
+              onClick={() => {
+                const tid = toast.loading("Starting scrape…");
+                triggerScrape.mutate(false, {
+                  onSettled: () => toast.dismiss(tid),
+                  onSuccess: () => {
+                    toast.success("Scrape finished");
+                    refetch();
+                  },
+                  onError: (e) => toast.error(e?.message || "Scrape failed"),
+                });
+              }}
+            >
+              {triggerScrape.isPending ? "Scraping…" : "Run scrape"}
+            </button>
+          </div>
+        </div>
       </header>
 
       {isLoading ? <div className="admin-loading">Loading ops summary…</div> : null}
@@ -76,6 +116,16 @@ export default function AdminPage() {
           <section className="admin-panel">
             <h2 className="admin-panel__title">Source Coverage</h2>
             <SourceTable rows={rows} />
+          </section>
+
+          <section className="admin-panel admin-panel--compact">
+            <h2 className="admin-panel__title">Jobs in DB by posted date</h2>
+            <p className="admin-panel__note">Cumulative counts (posted_at in Supabase).</p>
+            <div className="admin-grid admin-grid--recency">
+              <StatCard label="≤ 24h" value={fmtCount(recency.posted_within_24h)} />
+              <StatCard label="≤ 72h" value={fmtCount(recency.posted_within_72h)} />
+              <StatCard label="≤ 7d" value={fmtCount(recency.posted_within_7d)} />
+            </div>
           </section>
 
           <section className="admin-grid admin-grid--enrichment">

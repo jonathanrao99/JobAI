@@ -21,6 +21,8 @@ frontend/dist/
 
 # Local log files (app writes under data/logs/)
 data/logs/*.log
+data/resumes/tailored/*.pdf
+data/resumes/tailored/*.tex
 
 # OS & IDE
 .DS_Store
