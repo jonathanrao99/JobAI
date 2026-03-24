@@ -9,11 +9,17 @@ With both:     celery -A backend.tasks worker --beat --loglevel=info
 Monitor:       celery -A backend.tasks flower --port=5555
 """
 
+from datetime import UTC, datetime
+
 from celery import Celery
 from celery.schedules import crontab
 from loguru import logger
 
 from backend.config import settings
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(UTC).isoformat()
 
 # ── Celery app ────────────────────────────────────────────────────────────
 
@@ -78,6 +84,7 @@ def execute_scrape_pipeline(dry_run: bool = False) -> dict:
         if run_id:
             client.table("agent_runs").update({
                 "status": "completed",
+                "completed_at": _utc_now_iso(),
                 "items_processed": result.get("scraped_raw", 0),
                 "items_succeeded": result.get("inserted_to_db", 0),
                 "metadata": result,
@@ -91,6 +98,7 @@ def execute_scrape_pipeline(dry_run: bool = False) -> dict:
         if run_id:
             client.table("agent_runs").update({
                 "status": "failed",
+                "completed_at": _utc_now_iso(),
                 "error_message": str(e),
             }).eq("id", run_id).execute()
 
@@ -105,7 +113,7 @@ def scrape_and_filter(self, dry_run: bool = False):
     try:
         return execute_scrape_pipeline(dry_run=dry_run)
     except Exception as e:
-        raise self.retry(exc=e, countdown=300)
+        raise self.retry(exc=e, countdown=300) from None
 
 
 @celery_app.task(name="backend.tasks.purge_old_jobs")

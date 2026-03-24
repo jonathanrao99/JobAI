@@ -17,7 +17,7 @@ echo "📁 Creating project structure..."
 
 mkdir -p backend/{agents,integrations,models,prompts,routers,utils}
 mkdir -p backend/agents
-mkdir -p frontend/src/{pages,components,lib,hooks}
+mkdir -p frontend/{app,components,hooks,public}
 mkdir -p data/{resumes,outputs,logs,snapshots}
 
 # Create __init__.py files for Python packages
@@ -45,17 +45,11 @@ else
     echo "   ⚠️  Run: source .venv/bin/activate"
 fi
 
-# ── Node / React setup ───────────────────────────────────
+# ── Node / Next.js setup ─────────────────────────────────
 echo ""
-echo "⚛️  Setting up React frontend..."
-cd frontend
-npm create vite@latest . -- --template react --force -y 2>/dev/null || true
-npm install
-npm install @tanstack/react-query axios recharts react-router-dom lucide-react date-fns
-npm install -D tailwindcss postcss autoprefixer
-npx tailwindcss init -p 2>/dev/null || true
-cd ..
-echo "   ✅ React + Vite + Tailwind installed"
+echo "⚛️  Installing frontend dependencies..."
+npm install --prefix frontend
+echo "   ✅ Next.js frontend dependencies installed"
 
 echo ""
 echo "=================================================="
@@ -64,9 +58,8 @@ echo ""
 echo "  Next steps:"
 echo "  1. conda activate job-agent  (or source .venv/bin/activate)"
 echo "  2. pip install -r backend/requirements.txt"
-echo "     npm install && npm run dev   → API + frontend"
-echo "  3. cp .env.example .env  →  fill in your keys"
-echo "  4. Run backend/db/schema.sql in Supabase SQL Editor (migrate.py prints steps)"
-echo "  5. uvicorn backend.main:app --reload"
-echo "  6. cd frontend && npm run dev"
+echo "  3. npm install                 → root dev tooling"
+echo "  4. cp .env.example .env  →  fill in your keys"
+echo "  5. Run backend/db/schema.sql in Supabase SQL Editor (migrate.py prints steps)"
+echo "  6. npm run dev                 → API + Next.js frontend"
 echo "=================================================="

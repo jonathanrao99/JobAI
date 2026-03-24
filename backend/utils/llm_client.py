@@ -19,25 +19,42 @@ from loguru import logger
 from backend.config import settings
 
 _OPENROUTER_429_RETRIES = 3
-_OPENROUTER_429_BACKOFF = 20  # seconds between retries
+_OPENROUTER_429_BACKOFF = 5  # base seconds; capped so HTTP clients/proxies do not hang up
+_OPENROUTER_429_BACKOFF_CAP = 35  # max seconds per wait
 
 def _available_providers() -> list[str]:
-    """Return the list of providers that have API keys configured."""
-    # If the operator explicitly selects OpenRouter, don't waste time trying other
-    # providers first. This keeps scraping/scoring predictable during rollout.
-    if settings.llm_provider == "openrouter":
-        return ["openrouter"] if settings.openrouter_api_key else []
+    """Return the list of providers that have API keys configured.
 
-    # Otherwise, build an ordered list of configured providers.
+    If LLM_PROVIDER=openrouter, OpenRouter is tried first, then other configured
+    providers as fallback when OpenRouter is rate-limited or errors.
+    """
+    preferred = (settings.llm_provider or "").lower().strip()
+
+    def _append_unique(out: list[str], name: str) -> None:
+        if name not in out:
+            out.append(name)
+
     out: list[str] = []
+
+    if preferred == "openrouter" and settings.openrouter_api_key:
+        _append_unique(out, "openrouter")
+    elif preferred == "anthropic" and settings.anthropic_api_key:
+        _append_unique(out, "anthropic")
+    elif preferred == "google" and (settings.google_api_key or settings.gemini_api_key):
+        _append_unique(out, "google")
+    elif preferred == "openai" and settings.openai_api_key:
+        _append_unique(out, "openai")
+
+    # Fill remaining configured providers as fallbacks (order: anthropic, google, openai, openrouter).
     if settings.anthropic_api_key:
-        out.append("anthropic")
+        _append_unique(out, "anthropic")
     if settings.google_api_key or settings.gemini_api_key:
-        out.append("google")
+        _append_unique(out, "google")
     if settings.openai_api_key:
-        out.append("openai")
+        _append_unique(out, "openai")
     if settings.openrouter_api_key:
-        out.append("openrouter")
+        _append_unique(out, "openrouter")
+
     return out
 
 
@@ -188,7 +205,10 @@ async def _call_openrouter(messages, system, max_tokens, temperature) -> str:
                 )
                 return content
             except _RateLimitError as e:
-                wait = _OPENROUTER_429_BACKOFF * (attempt + 1)
+                wait = min(
+                    _OPENROUTER_429_BACKOFF * (attempt + 1),
+                    _OPENROUTER_429_BACKOFF_CAP,
+                )
                 logger.warning(
                     f"[LLM_CLIENT] 429 on {model} (attempt {attempt + 1}/"
                     f"{_OPENROUTER_429_RETRIES}), retrying in {wait}s"

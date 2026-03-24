@@ -1,10 +1,10 @@
 {
   "_instructions": "Source of truth for all agent decisions. Do not modify field names — only values.",
-  "_last_updated": "2026-03-18",
+  "_last_updated": "2026-03-23",
   "personal": {
     "name": "Jonathan Thota",
     "email": "jonathanrao5576@gmail.com",
-    "phone": "+1-205-503-0985",
+    "phone": "205-503-0985",
     "location": "Houston, TX",
     "linkedin_url": "https://linkedin.com/in/jonathanrao99",
     "github_url": "https://github.com/jonathanrao99",
@@ -73,12 +73,14 @@
       "Texas A&M University Victoria",
       "Texas A&M–Victoria",
       "TAMU-V",
-      "TAMUV",
+      "TAMUV"
+    ],
+    "form_only_legacy_names": [
       "University of Houston-Victoria",
       "University of Houston Victoria",
       "UHV"
     ],
-    "_university_alias_note": "Try aliases in order when primary name not found in a dropdown. UHV/University of Houston-Victoria is the legacy name — use as last resort if no A&M variant appears.",
+    "_university_alias_note": "Use university_aliases for resumes, cover letters, emails, and LLM prompts. form_only_legacy_names are for outdated application portals only — never use them in prose.",
     "degree_aliases": [
       "MS",
       "M.S.",
@@ -100,7 +102,49 @@
       "SQL",
       "JavaScript",
       "TypeScript",
-      "R"
+      "R",
+      "TensorFlow",
+      "Keras",
+      "scikit-learn",
+      "XGBoost",
+      "OpenCV",
+      "Pandas",
+      "NumPy",
+      "LSTM",
+      "MobileNetV2",
+      "Transfer Learning",
+      "Feature Engineering",
+      "Data Preprocessing",
+      "NLP",
+      "React",
+      "Next.js",
+      "Node.js",
+      "FastAPI",
+      "Flask",
+      "Express",
+      "Tableau",
+      "Power BI",
+      "Jupyter",
+      "Streamlit",
+      "Plotly",
+      "PostgreSQL",
+      "MySQL",
+      "Redis",
+      "Supabase",
+      "AWS",
+      "Docker",
+      "Git",
+      "GitHub",
+      "CI/CD",
+      "Webhooks",
+      "ETL Pipelines",
+      "REST APIs",
+      "System Design",
+      "Machine Learning Ops",
+      "Data Engineering",
+      "Cloud Deployment",
+      "Agile",
+      "Schema Validation"
     ],
     "ml_and_data": [
       "TensorFlow",
@@ -155,6 +199,55 @@
       "Cloud Deployment",
       "Agile",
       "Schema Validation"
+    ],
+    "flat_list": [
+      "Python",
+      "SQL",
+      "JavaScript",
+      "TypeScript",
+      "R",
+      "TensorFlow",
+      "Keras",
+      "scikit-learn",
+      "XGBoost",
+      "OpenCV",
+      "Pandas",
+      "NumPy",
+      "LSTM",
+      "MobileNetV2",
+      "Transfer Learning",
+      "Feature Engineering",
+      "Data Preprocessing",
+      "NLP",
+      "React",
+      "Next.js",
+      "Node.js",
+      "FastAPI",
+      "Flask",
+      "Express",
+      "Tableau",
+      "Power BI",
+      "Jupyter",
+      "Streamlit",
+      "Plotly",
+      "PostgreSQL",
+      "MySQL",
+      "Redis",
+      "Supabase",
+      "AWS",
+      "Docker",
+      "Git",
+      "GitHub",
+      "CI/CD",
+      "Webhooks",
+      "ETL Pipelines",
+      "REST APIs",
+      "System Design",
+      "Machine Learning Ops",
+      "Data Engineering",
+      "Cloud Deployment",
+      "Agile",
+      "Schema Validation"
     ]
   },
   "work_experience": [
@@ -163,48 +256,39 @@
       "role": "Data Analyst & Operations Manager",
       "duration": "Oct 2025 – Jan 2026",
       "is_current": false,
-      "impact_metrics": [
-        "70% reduction in operational errors",
-        "real-time KPI delivery"
-      ],
       "bullets": [
         "Built automated Python ETL pipelines to ingest, clean, and standardize multi-source operational data",
         "Developed Power BI dashboards delivering real-time KPIs and business insights for stakeholders",
         "Reduced operational errors by 70%+ by deploying a production data system integrating REST APIs",
         "Collaborated cross-functionally with operations, sales, and marketing teams to drive data-driven decisions"
-      ]
+      ],
+      "impact_metrics": []
     },
     {
       "company": "Sol3 Studio",
       "role": "Full Stack Developer",
       "duration": "Apr 2025 – Dec 2025",
       "is_current": false,
-      "impact_metrics": [
-        "production-ready applications",
-        "real-time data integration"
-      ],
       "bullets": [
         "Designed and implemented REST API integrations and automated backend data workflows",
         "Built scalable data pipelines using webhooks and schema validation across systems",
         "Delivered production-ready applications with real-time data integration and analytics instrumentation",
         "Maintained version-controlled codebases with Git/GitHub and full documentation"
-      ]
+      ],
+      "impact_metrics": []
     },
     {
       "company": "CodeClause",
       "role": "Data Science Intern",
       "duration": "Aug 2023 – Oct 2023",
       "is_current": false,
-      "impact_metrics": [
-        "86.6% model accuracy",
-        "85%+ computer vision accuracy"
-      ],
       "bullets": [
         "Built MRI brain tumor classification model using MobileNetV2 achieving 86.6% accuracy",
         "Developed real-time computer vision pipeline using OpenCV with >85% accuracy",
         "Applied data preprocessing, augmentation, and transfer learning techniques in ML pipelines",
         "Collaborated via GitHub on code reviews and distributed team workflows"
-      ]
+      ],
+      "impact_metrics": []
     }
   ],
   "projects": [
@@ -325,6 +409,7 @@
       "financial advisor",
       "requires PhD"
     ],
+    "title_must_include_any": [],
     "bonus_signals": [
       "startup",
       "Series A",
@@ -369,5 +454,6 @@
     "race": "Decline to state",
     "how_did_you_hear": "Online job board",
     "cover_letter_hook": "As a Data Science MS candidate at Texas A&M with production experience building ML pipelines, ETL systems, and full-stack analytics platforms, I'm excited to bring both technical depth and a track record of measurable impact to {company}."
-  }
+  },
+  "_profile_saved_at": "2026-03-23T20:41:38.240922+00:00"
 }

@@ -8,9 +8,10 @@ Run with:
 """
 
 import sys
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exception_handlers import (
     http_exception_handler,
     request_validation_exception_handler,
@@ -23,13 +24,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.config import settings
 from backend.db.client import init_db
-from backend.version import __version__
 from backend.routers.agent_runs import router as agent_runs_router
+from backend.routers.admin import router as admin_router
 from backend.routers.applications import router as applications_router
 from backend.routers.jobs import router as jobs_router
 from backend.routers.profile import router as profile_router
 from backend.routers.resumes import router as resumes_router
-
+from backend.security import require_api_auth
+from backend.version import __version__
 
 # ── Logging setup ────────────────────────────────────────
 logger.remove()
@@ -75,6 +77,15 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    rid = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = rid
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     if isinstance(exc, StarletteHTTPException):
@@ -99,8 +110,13 @@ async def health():
     }
 
 
-app.include_router(jobs_router, prefix="/api/jobs", tags=["Jobs"])
-app.include_router(resumes_router, prefix="/api/resumes", tags=["Resumes"])
-app.include_router(profile_router, prefix="/api/profile", tags=["Profile"])
-app.include_router(applications_router, prefix="/api/applications", tags=["Applications"])
-app.include_router(agent_runs_router, prefix="/api/agent-runs", tags=["Agent runs"])
+_api_deps = [Depends(require_api_auth)]
+
+app.include_router(jobs_router, prefix="/api/jobs", tags=["Jobs"], dependencies=_api_deps)
+app.include_router(resumes_router, prefix="/api/resumes", tags=["Resumes"], dependencies=_api_deps)
+app.include_router(profile_router, prefix="/api/profile", tags=["Profile"], dependencies=_api_deps)
+app.include_router(
+    applications_router, prefix="/api/applications", tags=["Applications"], dependencies=_api_deps
+)
+app.include_router(agent_runs_router, prefix="/api/agent-runs", tags=["Agent runs"], dependencies=_api_deps)
+app.include_router(admin_router, prefix="/api/admin", tags=["Admin"], dependencies=_api_deps)

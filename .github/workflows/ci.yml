@@ -14,6 +14,10 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r backend/requirements.txt pytest
+      - run: >
+          ruff check backend/routers backend/main.py backend/config.py
+          backend/security.py backend/errors.py backend/tasks.py
+          backend/agents/scraper_agent.py tests
       - run: pytest tests -q
 
   frontend:
@@ -26,4 +30,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --prefix frontend
+      - run: npm run lint --prefix frontend
       - run: npm run build --prefix frontend

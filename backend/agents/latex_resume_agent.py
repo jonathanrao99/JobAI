@@ -15,6 +15,11 @@ from typing import Any, Optional
 
 from loguru import logger
 
+try:
+    from pypdf import PdfReader
+except ImportError:  # pragma: no cover
+    PdfReader = None  # type: ignore[misc, assignment]
+
 # ── LaTeX escaping ────────────────────────────────────────────────
 
 _LATEX_SPECIAL = {
@@ -60,6 +65,18 @@ def _bold_metrics(text: str) -> str:
 
 def _fmt(text: str) -> str:
     return _bold_metrics(_esc(text.strip()))
+
+
+# ── Freelance label sanitizer ─────────────────────────────────────
+
+_FREELANCE_RE = re.compile(
+    r"[\s,\-–—]*\(?\s*[Ff]reelance\s*\)?\s*$"
+)
+
+
+def _strip_freelance(text: str) -> str:
+    """Remove trailing ', Freelance', '(Freelance)', or similar from org/company text."""
+    return _FREELANCE_RE.sub("", text).strip()
 
 
 # ── Template constants ────────────────────────────────────────────
@@ -142,12 +159,14 @@ _SKILLS = r"""
 % ── SKILLS ────────────────────────────────────────────────────────
 \section{Technical Skills}
 
-\skillrow{ML \& DL}{Model Training, Hyperparameter Tuning, Transfer Learning, Model Compression, CNNs, LSTM, MobileNetV2, Feature Engineering, Cross-Validation}
-\skillrow{GenAI \& LLMs}{LangChain, OpenAI API, OpenRouter, Multi-Agent Orchestration, Prompt Engineering, RAG Pipelines, ChromaDB, Vector Embeddings}
-\skillrow{Libraries}{TensorFlow/Keras, Scikit-learn, XGBoost, LightGBM, OpenCV, Pandas, NumPy}
-\skillrow{Languages}{Python, SQL, JavaScript, TypeScript, R}
-\skillrow{Infrastructure}{REST APIs, Flask, FastAPI, Docker, AWS, ETL Pipelines, PostgreSQL, MySQL, Git/GitHub, Jupyter}
-\skillrow{Visualization}{Matplotlib, Seaborn, Plotly, Streamlit, Tableau, Power BI}
+\skillrow{Data Analysis}{EDA, Data Cleaning, Feature Engineering, Statistical Analysis, A/B Testing, KPI Tracking}
+\skillrow{Machine Learning}{Regression, Classification, Time Series (LSTM), Model Evaluation, Cross-Validation}
+\skillrow{Languages}{Python, SQL, R, JavaScript}
+\skillrow{Data Tools}{Pandas, NumPy, Scikit-learn, TensorFlow, XGBoost}
+\skillrow{Visualization}{Tableau, Power BI, Plotly, Matplotlib, Seaborn, Streamlit}
+\skillrow{Data Engineering}{ETL Pipelines, Data Warehousing Concepts, REST APIs, PostgreSQL, MySQL}
+\skillrow{GenAI}{LangChain, OpenAI API, RAG Pipelines, Prompt Engineering}
+\skillrow{Tools}{Git/GitHub, Docker, Vercel, Jupyter Notebook, Colab}
 """
 
 _EDUCATION = r"""
@@ -157,8 +176,7 @@ _EDUCATION = r"""
 \roleheading{Texas A\&M University -- Victoria}{Jan 2025 -- May 2026}
 \orgline{M.S. Data Science \;|\; GPA: 3.8 / 4.0}{Houston, TX}
 \vspace{1pt}
-\footnotesize\textit{Statistical Modeling, Predictive Analytics, Machine Learning, Data
-Visualization, Database Systems, Advanced SQL, Research Methods}
+\footnotesize\textit{Data Mining, Machine Learning, Data Warehousing, Advanced SQL, Statistical Modeling, Data Visualization}
 
 \end{document}
 """
@@ -171,8 +189,8 @@ def _build_summary(summary: str) -> str:
     if not summary or not summary.strip():
         return ""
     return (
-        "\n% ── SUMMARY ───────────────────────────────────────────────────────\n"
-        "\\section{Summary}\n\n"
+        "\n% ── PROFESSIONAL SUMMARY ───────────────────────────────────────────\n"
+        "\\section{Professional Summary}\n\n"
         "\\footnotesize\n"
         f"{_esc(summary.strip())}\n"
     )
@@ -194,11 +212,11 @@ def _build_experience(
         if i < len(meta):
             role = meta[i]["role"]
             dates = meta[i]["dates"].replace("\u2013", "--")
-            company = meta[i]["company"]
+            company = _strip_freelance(meta[i]["company"])
             location = meta[i]["location"]
         else:
             role = entry.get("role", "")
-            company = entry.get("company", "")
+            company = _strip_freelance(entry.get("company", ""))
             dates, location = "", ""
 
         lines.append(f"\\roleheading{{{_esc(role)}}}{{{_esc(dates)}}}\n")
@@ -280,6 +298,17 @@ def render_latex_resume(
     experience = _build_experience(llm_data.get("experience", []), experience_meta)
     projects = _build_projects(llm_data.get("projects", []), project_meta)
     return _HEAD + summary + _SKILLS + experience + projects + _EDUCATION
+
+
+def count_pdf_pages(pdf_path: Path) -> Optional[int]:
+    if PdfReader is None:
+        return None
+    try:
+        reader = PdfReader(str(pdf_path))
+        return len(reader.pages)
+    except Exception as e:
+        logger.warning(f"Could not read PDF page count ({pdf_path}): {e}")
+        return None
 
 
 def compile_pdf(

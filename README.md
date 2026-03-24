@@ -35,18 +35,43 @@ npm run dev                    # API via scripts/dev-api.sh → .venv or conda e
 docker compose up -d           # Redis + Celery + Flower
 ```
 
-Open http://localhost:5173 (proxies `/api` to the backend).
+Open http://localhost:5173. In **development**, [`frontend/hooks/useJobs.js`](frontend/hooks/useJobs.js) resolves `/api/...` to `http://<same-hostname>:8000/...` so the browser does not use Next’s dev proxy for API calls (avoids timeouts on long routes such as `POST /api/applications/{id}/prepare`). Set `NEXT_PUBLIC_API_URL` to override (e.g. production). [`scripts/dev-api.sh`](scripts/dev-api.sh) binds Uvicorn to `0.0.0.0:8000` so `http://<LAN-IP>:5173` can reach the API; add that origin to `FRONTEND_URL` for CORS.
+
+**If you see `ENOENT` / `app-build-manifest.json` / `_buildManifest.js.tmp`:** Turbopack + Fast Refresh can race when the cache is rewritten. The API used to reload on *every* repo file change (including `frontend/.next`), which made this worse — `scripts/dev-api.sh` now uses **`--reload-dir backend`** only. Default **`npm run dev`** in `frontend/` uses webpack (not `--turbopack`) for more stable HMR; use `npm run dev:turbo --prefix frontend` if you want Turbopack. To fix a broken cache: stop dev, run **`npm run clean:frontend`** (or `bash scripts/clean-frontend-next.sh`), then **`npm run dev`** again.
 
 ### Development
 
 ```bash
 npm test                       # pytest via .venv (smoke-tests API; Supabase init mocked)
 npm run lint:backend           # ruff on backend/
-npm run build:frontend         # Vite production build
+npm run build:frontend         # Next.js production build
 ```
 
 Without `.venv`, use `python -m pytest tests -q` with your conda env active.
 
+### Job Board time filter and keywords
+
+- **`GET /api/jobs?since_days=N`** filters by **listing time**: `posted_at >= cutoff`, or if `posted_at` is null, **`scraped_at`** (so the “Last 24 Hours” tab matches when the job was posted, not when it was ingested).
+- **`jd_keywords`** on `jobs` is filled by the filter-agent LLM from the title and description. If your database predates this column, run [`backend/db/migrations/add_jd_keywords.sql`](backend/db/migrations/add_jd_keywords.sql) in the Supabase SQL Editor.
+
+### Scrape volume vs. quality vs. LLM cost
+
+Tune the optional `scraper_agent` block in `config.yaml` (see `config.yaml.example`):
+
+- **`jobspy_sites` / `results_per_query` / `hours_old`** — raw listing volume from JobSpy.
+- **`locations`** — list of location strings for JobSpy (defaults to `target_locations` when omitted). Combined with `search_queries`, total fetches are capped by **`jobspy_max_fetch_combos`** to avoid runaway runtime.
+- **`max_jobs_per_run`** — after hash + normalized **URL** dedupe, jobs are **pre-ranked** (title overlap with `target_job_titles`, remote flag, recency) so the cap keeps the strongest rows for the LLM.
+- **`description_backfill_max`** — bounded HTTP fetches to fill empty/short descriptions before filtering (improves match quality without scraping everything twice).
+
+Each completed scrape stores **`funnel_by_source`** on the `agent_runs` row (`metadata`): per `source_board`, counts for `raw`, `post_dedup`, `to_llm`, `instant_reject`, and LLM `apply` / `maybe` / `skip`. Use that to see which sources feed good matches.
+
+Cheap pre-filters live in `data/candidate_profile.json` under `ai_scoring_signals`: **`instant_reject_keywords`** and optional **`title_must_include_any`** (title must contain at least one substring when the list is non-empty).
+
+### Extra Apify actors (`scraper_agent.apify_actors`)
+
+Set `APIFY_API_TOKEN` in `.env`. The scraper already calls the **Dice** actor (`shahidirfan/dice-job-scraper`) internally. To add **additional** [Apify Store](https://apify.com/store) actors, list them under `scraper_agent.apify_actors` in `config.yaml` (see `config.yaml.example`). Each entry needs an actor `id`, `source_board`, `mapper` (`dice` or `flex`), and an `input` object whose string values can use `{query}`, `{keyword}`, and `{location}`. Do **not** duplicate the Dice actor in YAML (it is skipped to avoid double-fetching).
+
+**Compliance:** Job-board scraping may violate site terms; verify Apify actor licenses and target-site policies before running in production.
 
 ---
 
@@ -60,7 +85,7 @@ Without `.venv`, use `python -m pytest tests -q` with your conda env active.
 | **4 — Apply Agent** | Playwright-stealth, Easy Apply, ATS form loop, CAPTCHA handling, dry-run mode | ⏳ |
 | **5 — Apply Agent (cont.)** | Workday, Greenhouse, Lever, Ashby full form support, failure logging | ⏳ |
 | **6 — Outreach Agent** | Apollo contact lookup, PhantomBuster LinkedIn DM, Gmail cold email, 3-touch sequence | ⏳ |
-| **7 — Dashboard** | React Kanban + Table, Analytics charts, Outreach center, Agent control panel | ⏳ |
+| **7 — Dashboard** | React dashboard, Analytics charts, agent control panel | In progress |
 | **8 — Status Parsing** | Gmail OAuth inbox parser, LinkedIn message parser, Calendar invite detector | ⏳ |
 | **9 — Learning Agent** | Failure analysis, prompt evolution, answer memory with pgvector | ⏳ |
 
@@ -83,8 +108,9 @@ JobAI/
 │   ├── tasks.py          # Celery
 │   ├── config.py
 │   └── main.py
-├── frontend/src/
-│   ├── pages/            # Dashboard, Pipeline, Agents (+ Analytics/Outreach placeholders)
+├── frontend/
+│   ├── app/              # Next.js app router pages/layout
+│   ├── components/       # shared client components
 │   └── hooks/            # React Query API helpers
 ├── companies/            # per-company ATS YAML (scraper input)
 ├── scripts/dev-api.sh    # picks .venv / conda for uvicorn

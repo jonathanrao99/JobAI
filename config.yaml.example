@@ -201,17 +201,64 @@ job_boards:
   jooble_api_key: ""   # paste your API key here
 
 # ============================================================
-# Scraper agent (optional overrides — merges with target_job_titles above)
+# Scraper agent (optional — merges search strings with target_job_titles)
 # ============================================================
 scraper_agent:
-  # Extra or replacement search strings for jobspy + Apify actors
+  # Extra or replacement search strings for JobSpy + Dice Apify actor
   # search_queries: []
-  # Boards passed to python-jobspy (must be supported by jobspy)
+  # JobSpy site ids (must be supported by python-jobspy)
   jobspy_sites:
     - linkedin
     - indeed
     - zip_recruiter
     - google
+    - dice
+  # Geographic search strings for JobSpy (falls back to target_locations if omitted)
+  # locations:
+  #   - "United States"
+  #   - "Remote"
+  #   - "Atlanta, GA"
   results_per_query: 30
-  hours_old: 168              # jobspy window (hours)
-  max_jobs_per_run: 500       # cap before LLM filter
+  hours_old: 168                 # JobSpy recency window (hours)
+  drop_jobs_without_posted_at: false  # set true for strict newest-only mode across all sources
+  max_jobs_per_run: 500          # max listings sent to the LLM filter after dedupe + pre-rank
+  jobspy_max_fetch_combos: 300   # cap on (search_query × location) JobSpy calls per run
+  description_min_chars: 80      # listings shorter than this may get an HTTP backfill fetch
+  description_backfill_max: 40   # max listing pages to fetch per run (time budget)
+  # Optional runtime profile overrides for speed/cost:
+  # runtime_profile: balanced    # fast | balanced | max
+  # max_results_per_source: 200
+  # max_apify_actor_runs: 40
+
+  # Optional: extra Apify Store actors (requires APIFY_API_TOKEN). Each run calls
+  # per search query. Do not add shahidirfan/dice-job-scraper here — Dice is built in.
+  # Verify each actor's input schema in the Apify console; use {query}, {keyword}, {location} in strings.
+  # Mappers: "dice" | "flex" (flex tries common title/company/url keys). Respect site ToS.
+  # apify_actors:
+  #   - id: your-username/some-job-actor
+  #     enabled: false
+  #     source_board: custom_board
+  #     mapper: flex
+  #     results_wanted: 25
+  #     input:
+  #       search: "{query}"
+  #       location: "{location}"
+  #
+  # Phase 1 US major-board defaults (recommended):
+  # apify_actors:
+  #   - id: horizon_datajobs/us-wellfound-jobs
+  #     enabled: true
+  #     source_board: wellfound
+  #     mapper: flex
+  #     results_wanted: 25
+  #     input:
+  #       query: "{query}"
+  #       location: "{location}"
+  #   - id: horizon_datajobs/us-builtin-jobs
+  #     enabled: true
+  #     source_board: builtin
+  #     mapper: flex
+  #     results_wanted: 25
+  #     input:
+  #       query: "{query}"
+  #       location: "{location}"

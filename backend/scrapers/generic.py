@@ -22,18 +22,6 @@ _rl = RateLimiter()
 # Playwright is not thread-safe — only one browser instance at a time
 _playwright_lock = threading.Lock()
 
-# Common career path suffixes to try
-_CAREER_PATHS = ["/careers", "/jobs", "/join", "/openings", "/positions", "/work-with-us"]
-
-# Patterns that hint at the date of posting in HTML text
-_DATE_PATTERNS = [
-    r"posted\s+(\d+)\s+day",
-    r"(\d+)\s+day[s]?\s+ago",
-    r"posted\s+(today|yesterday)",
-    r"(\d{4}-\d{2}-\d{2})",
-    r"(\w+\s+\d{1,2},?\s+\d{4})",
-]
-
 # ---------------------------------------------------------------------------
 # Garbage-filtering constants
 # ---------------------------------------------------------------------------

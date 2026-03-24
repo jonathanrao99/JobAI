@@ -5,8 +5,10 @@ Central configuration using pydantic-settings.
 All values come from .env — never hardcode secrets.
 """
 
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic import model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -31,13 +33,24 @@ class Settings(BaseSettings):
     # Primary/fallback OpenRouter models (single-key rollout).
     # If the primary model errors (e.g., retired/quota/model not found),
     # the LLM client will retry the fallback once.
-    openrouter_model: str = "mistralai/mistral-small-3.1-24b-instruct:free"
-    openrouter_fallback_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    openrouter_model: str = "stepfun/step-3.5-flash:free"
+    openrouter_fallback_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
     google_model: str = "gemini-2.0-flash"
     openai_model: str = "gpt-4o-mini"
 
     # ── Apify ────────────────────────────────────────────
     apify_api_token: str = ""
+    apify_people_actor_id: str = "apify/google-search-scraper"
+    apify_email_actor_id: str = ""
+    contact_enrichment_max_contacts: int = 5
+    contact_enrichment_min_contacts: int = 3
+    contact_enrichment_timeout_seconds: int = 45
+    contact_enrichment_email_top_k: int = 3
+    contact_enrichment_cache_ttl_seconds: int = 21600
+    contact_enrichment_force_refresh: bool = False
+    scraper_runtime_profile: str = "balanced"  # fast | balanced | max
+    scraper_max_results_per_source: int = 200
+    scraper_max_apify_actor_runs: int = 40
 
     # ── Apollo ───────────────────────────────────────────
     apollo_api_key: str = ""
@@ -57,8 +70,6 @@ class Settings(BaseSettings):
 
     # ── Resend ───────────────────────────────────────────
     resend_api_key: str = ""
-    outreach_from_email: str = ""
-    outreach_from_name: str = ""
 
     # ── 2Captcha ─────────────────────────────────────────
     twocaptcha_api_key: str = ""
@@ -69,6 +80,8 @@ class Settings(BaseSettings):
     # ── App ──────────────────────────────────────────────
     environment: str = "development"
     secret_key: str = "change-me-in-production"
+    # If set, all /api/* routes require Authorization: Bearer <token> or X-JobAI-Token
+    jobai_api_token: str = ""
     frontend_url: str = "http://localhost:5173"
     backend_url: str = "http://localhost:8000"
 
@@ -86,8 +99,14 @@ class Settings(BaseSettings):
         case_sensitive = False
         extra = "ignore"
 
+    @model_validator(mode="after")
+    def production_requires_api_token(self):
+        if (self.environment or "").lower() == "production" and not (self.jobai_api_token or "").strip():
+            raise ValueError("JOBAI_API_TOKEN is required when ENVIRONMENT=production")
+        return self
 
-@lru_cache()
+
+@lru_cache
 def get_settings() -> Settings:
     return Settings()
 

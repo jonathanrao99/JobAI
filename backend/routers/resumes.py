@@ -10,14 +10,13 @@ GET  /api/resumes/:id/download     — download pdf or tex
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from loguru import logger
 from pydantic import BaseModel
 
 from backend.db.client import db
+from backend.errors import INTERNAL_ERROR, log_internal_error
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,7 +33,7 @@ class TailorRequest(BaseModel):
 
 
 @router.post("/tailor")
-async def tailor_resume(body: TailorRequest, background_tasks: BackgroundTasks):
+async def tailor_resume(body: TailorRequest):
     """Tailor the base resume for a specific APPLY job."""
     client = db()
 
@@ -46,11 +45,13 @@ async def tailor_resume(body: TailorRequest, background_tasks: BackgroundTasks):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch job: {e}")
+        log_internal_error("tailor_resume fetch job", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
     try:
-        from backend.agents.resume_agent import run_resume_agent
         import asyncio
+
+        from backend.agents.resume_agent import run_resume_agent
 
         result = await asyncio.to_thread(run_resume_agent, job)
 
@@ -68,16 +69,19 @@ async def tailor_resume(body: TailorRequest, background_tasks: BackgroundTasks):
             "ats_score_estimate": result.get("ats_score_estimate"),
             "skills_line": result.get("skills_line", ""),
         }
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=400,
+            detail="Required resume or profile file is missing on the server.",
+        ) from None
     except Exception as e:
-        logger.error(f"Resume tailoring failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("tailor_resume run_resume_agent", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.get("")
 async def list_resumes(
-    job_id: Optional[str] = Query(None, description="Filter by job UUID"),
+    job_id: str | None = Query(None, description="Filter by job UUID"),
     limit: int = 50,
     offset: int = 0,
 ):
@@ -94,7 +98,8 @@ async def list_resumes(
         result = q.range(offset, offset + limit - 1).execute()
         return {"resumes": result.data, "count": len(result.data)}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /resumes", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.get("/{resume_id}")
@@ -115,7 +120,8 @@ async def get_resume(resume_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /resumes/{id}", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.get("/{resume_id}/download")
@@ -134,7 +140,8 @@ async def download_resume(
             .execute()
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /resumes/{id}/download meta", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
     if not result.data or not result.data.get("file_path"):
         raise HTTPException(status_code=404, detail="Resume not found")
@@ -144,13 +151,13 @@ async def download_resume(
     full_path = REPO_ROOT / target
 
     if not full_path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"{format.upper()} file not found at {target}",
-        )
+        raise HTTPException(status_code=404, detail="Requested resume file is not available.")
 
+    # PDF: inline disposition so browsers can render inside <iframe> (attachment often shows a blank box).
+    disposition = "inline" if format == "pdf" else "attachment"
     return FileResponse(
         path=str(full_path),
         media_type=_MEDIA_TYPES.get(format, "application/octet-stream"),
         filename=full_path.name,
+        content_disposition_type=disposition,
     )

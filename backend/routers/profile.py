@@ -8,19 +8,42 @@ Merges form data with the existing file so advanced keys (target_roles, salary, 
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import os
+import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from loguru import logger
+from backend.errors import INTERNAL_ERROR, log_internal_error
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROFILE_PATH = REPO_ROOT / "data" / "candidate_profile.json"
 
 router = APIRouter()
+
+
+def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    fd, tmp = tempfile.mkstemp(
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        text=True,
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(payload)
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 class PersonalForm(BaseModel):
@@ -36,8 +59,9 @@ class EducationForm(BaseModel):
     university: str = ""
     degree: str = ""
     major: str = ""
-    graduation_year: Optional[int] = None
+    graduation_year: int | None = None
     gpa: str = ""
+    coursework: str = ""
 
 
 class ExperienceForm(BaseModel):
@@ -67,7 +91,7 @@ def _load_raw() -> dict[str, Any]:
     if not PROFILE_PATH.exists():
         raise HTTPException(
             status_code=404,
-            detail=f"Profile file not found at {PROFILE_PATH}. Create data/candidate_profile.json first.",
+            detail="Profile data not found. Add data/candidate_profile.json to the project data directory.",
         )
     return json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
 
@@ -92,6 +116,7 @@ def _form_from_profile(raw: dict[str, Any]) -> ProfilePayload:
             major=str(edu.get("major") or ""),
             graduation_year=edu.get("graduation_year"),
             gpa=str(edu.get("gpa") or ""),
+            coursework=", ".join(edu.get("relevant_coursework") or []) if isinstance(edu.get("relevant_coursework"), list) else str(edu.get("coursework") or ""),
         )
     ]
     for e in raw.get("education_history") or []:
@@ -103,6 +128,7 @@ def _form_from_profile(raw: dict[str, Any]) -> ProfilePayload:
                     major=str(e.get("major") or ""),
                     graduation_year=e.get("graduation_year"),
                     gpa=str(e.get("gpa") or ""),
+                    coursework=", ".join(e.get("relevant_coursework") or []) if isinstance(e.get("relevant_coursework"), list) else str(e.get("coursework") or ""),
                 )
             )
 
@@ -173,7 +199,9 @@ def _merge_save(raw: dict[str, Any], body: ProfilePayload) -> dict[str, Any]:
         "languages": flat_skills[:80] if flat_skills else skills_prev.get("languages") or [],
     }
 
-    edu_rows = [e for e in body.education if e.university.strip() or e.degree.strip() or e.major.strip()]
+    edu_rows = [
+        e for e in body.education if e.university.strip() or e.degree.strip() or e.major.strip() or e.coursework.strip()
+    ]
     if edu_rows:
         first = edu_rows[0]
         prev_edu = out.get("education") if isinstance(out.get("education"), dict) else {}
@@ -184,6 +212,9 @@ def _merge_save(raw: dict[str, Any], body: ProfilePayload) -> dict[str, Any]:
             "major": first.major.strip() or prev_edu.get("major", ""),
             "graduation_year": first.graduation_year if first.graduation_year is not None else prev_edu.get("graduation_year"),
             "gpa": first.gpa.strip() if first.gpa else prev_edu.get("gpa", ""),
+            "relevant_coursework": [c.strip() for c in (first.coursework or "").split(",") if c.strip()]
+            if first.coursework and first.coursework.strip()
+            else prev_edu.get("relevant_coursework", []),
         }
         rest = []
         for e in edu_rows[1:]:
@@ -194,6 +225,7 @@ def _merge_save(raw: dict[str, Any], body: ProfilePayload) -> dict[str, Any]:
                     "major": e.major.strip(),
                     "graduation_year": e.graduation_year,
                     "gpa": e.gpa.strip(),
+                    "relevant_coursework": [c.strip() for c in (e.coursework or "").split(",") if c.strip()],
                 }
             )
         if rest:
@@ -234,8 +266,8 @@ def _merge_save(raw: dict[str, Any], body: ProfilePayload) -> dict[str, Any]:
     if pr_out:
         out["projects"] = pr_out
 
-    out["_last_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    out["_profile_saved_at"] = datetime.now(timezone.utc).isoformat()
+    out["_last_updated"] = datetime.now(UTC).strftime("%Y-%m-%d")
+    out["_profile_saved_at"] = datetime.now(UTC).isoformat()
 
     return out
 
@@ -246,7 +278,7 @@ async def get_profile():
         raw = _load_raw()
         form = _form_from_profile(raw)
         mtime = PROFILE_PATH.stat().st_mtime
-        last_saved = datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
+        last_saved = datetime.fromtimestamp(mtime, tz=UTC).isoformat()
         saved_at = raw.get("_profile_saved_at") or last_saved
         return {
             "profile": raw,
@@ -256,8 +288,8 @@ async def get_profile():
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"GET /profile error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /profile", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.put("")
@@ -266,7 +298,7 @@ async def put_profile(body: ProfilePayload):
         raw = _load_raw()
         merged = _merge_save(raw, body)
         PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        PROFILE_PATH.write_text(json.dumps(merged, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        _atomic_write_json(PROFILE_PATH, merged)
         form = _form_from_profile(merged)
         return {
             "success": True,
@@ -276,5 +308,5 @@ async def put_profile(body: ProfilePayload):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"PUT /profile error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("PUT /profile", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None

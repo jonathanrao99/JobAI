@@ -3,9 +3,9 @@ GET /api/agent-runs — recent scraper / agent execution history (agent_runs tab
 """
 
 from fastapi import APIRouter, HTTPException, Query
-from loguru import logger
 
 from backend.db.client import db
+from backend.errors import INTERNAL_ERROR, log_internal_error
 
 router = APIRouter()
 
@@ -23,5 +23,5 @@ async def list_agent_runs(
         result = q.execute()
         return {"runs": result.data or [], "count": len(result.data or [])}
     except Exception as e:
-        logger.error(f"GET /agent-runs error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /agent-runs", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None

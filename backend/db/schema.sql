@@ -81,7 +81,8 @@ CREATE TABLE jobs (
   ai_verdict            TEXT CHECK (ai_verdict IN ('APPLY', 'MAYBE', 'SKIP')),
   ai_reason             TEXT,
   ai_scored_at          TIMESTAMPTZ,
-  
+  jd_keywords           TEXT[],              -- LLM-extracted skills/tools from JD (filter agent)
+
   -- Compensation
   salary_min            INTEGER,
   salary_max            INTEGER,
@@ -162,6 +163,9 @@ CREATE TABLE applications (
   -- Application details
   apply_type            apply_type,
   cover_letter          TEXT,
+  linkedin_note         TEXT,
+  cold_email            TEXT,
+  cold_email_subject    TEXT,
   
   -- Form Q&A (array of {question, answer, field_type} objects)
   form_qa               JSONB DEFAULT '[]'::JSONB,
@@ -502,6 +506,66 @@ SELECT json_build_object(
 $$;
 
 COMMENT ON FUNCTION public.job_dashboard_stats IS 'Aggregated job stats for JobAI dashboard.';
+
+-- Daily job counts by verdict for analytics charts (single round-trip vs paginating rows in Python)
+CREATE OR REPLACE FUNCTION public.job_analytics_series(p_days integer DEFAULT 30)
+RETURNS json
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+WITH windowed AS (
+  SELECT scraped_at, ai_verdict
+  FROM jobs
+  WHERE scraped_at IS NOT NULL
+    AND scraped_at >= (NOW() AT TIME ZONE 'UTC') - (p_days::text || ' days')::interval
+),
+day_counts AS (
+  SELECT
+    (scraped_at AT TIME ZONE 'UTC')::date AS d,
+    COUNT(*)::int AS total,
+    COUNT(*) FILTER (WHERE COALESCE(NULLIF(lower(trim(ai_verdict)), ''), 'maybe') = 'apply')::int AS apply_cnt,
+    COUNT(*) FILTER (WHERE COALESCE(NULLIF(lower(trim(ai_verdict)), ''), 'maybe') = 'maybe')::int AS maybe_cnt,
+    COUNT(*) FILTER (WHERE COALESCE(NULLIF(lower(trim(ai_verdict)), ''), 'maybe') = 'skip')::int AS skip_cnt
+  FROM windowed
+  GROUP BY 1
+)
+SELECT json_build_object(
+  'series', COALESCE(
+    (SELECT json_agg(
+      json_build_object(
+        'date', d::text,
+        'total', total,
+        'APPLY', apply_cnt,
+        'MAYBE', maybe_cnt,
+        'SKIP', skip_cnt
+      ) ORDER BY d
+    ) FROM day_counts),
+    '[]'::json
+  ),
+  'rows_used', (SELECT COUNT(*)::int FROM windowed),
+  'truncated', false
+);
+$$;
+
+COMMENT ON FUNCTION public.job_analytics_series IS 'Time-series job counts by day for JobAI analytics API.';
+
+-- Which dedup_hash values already exist (for scraper batch dedup without loading the whole table)
+CREATE OR REPLACE FUNCTION public.jobs_dedup_hashes_in(p_hashes text[])
+RETURNS text[]
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT COALESCE(
+    ARRAY(SELECT dedup_hash FROM jobs WHERE dedup_hash = ANY(COALESCE(p_hashes, '{}'))),
+    '{}'::text[]
+  );
+$$;
+
+COMMENT ON FUNCTION public.jobs_dedup_hashes_in IS 'Returns subset of p_hashes that already exist in jobs.';
 
 -- ── ROW LEVEL SECURITY ───────────────────────────────────────────────────
 -- Enable RLS on all tables (Supabase best practice)

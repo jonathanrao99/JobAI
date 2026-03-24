@@ -38,6 +38,11 @@ def run_migration() -> None:
     print()
     print("Optional: use Supabase MCP `apply_migration` / `execute_sql` from Cursor.")
     print(f"Project URL (from .env): {url}")
+    mig = schema_path.parent / "migrations" / "add_jd_keywords.sql"
+    if mig.exists():
+        print()
+        print("If your database predates newer columns, also run forward migrations, e.g.:")
+        print(f"  {mig}")
 
 
 if __name__ == "__main__":

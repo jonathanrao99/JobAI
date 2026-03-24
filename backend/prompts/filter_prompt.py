@@ -46,6 +46,10 @@ def _work_exp_line(profile: dict) -> str:
     return ", ".join(parts) if parts else "N/A"
 
 
+# Enough JD text for scoring + keyword extraction (token budget handled by caller max_tokens).
+JD_DESCRIPTION_MAX_CHARS = 6000
+
+
 FILTER_SYSTEM_PROMPT = """You are an expert job search assistant. Your job is to evaluate job listings
 against a candidate's profile and decide whether they should apply.
 
@@ -91,13 +95,14 @@ CANDIDATE PROFILE:
 
     jobs_text = ""
     for i, job in enumerate(jobs_batch):
+        desc = str(job.get("description") or "")[:JD_DESCRIPTION_MAX_CHARS]
         jobs_text += f"""
 JOB {i}:
   Title: {job.get('title', 'N/A')}
   Company: {job.get('company', 'N/A')}
   Location: {job.get('location', 'N/A')}
   Source: {job.get('source_board', 'N/A')}
-  Description (first 600 chars): {str(job.get('description', ''))[:600]}
+  Description (excerpt up to {JD_DESCRIPTION_MAX_CHARS} chars): {desc}
   Salary: {job.get('salary_min', 'N/A')} – {job.get('salary_max', 'N/A')}
 """
 
@@ -113,7 +118,8 @@ Respond with a JSON array — one object per job, in order. Each object must hav
   "verdict": "APPLY" | "MAYBE" | "SKIP",
   "reason": "<one sentence, specific to this job and candidate>",
   "missing_skills": ["<skill the JD wants that candidate lacks>"],
-  "strengths": ["<specific reason candidate is a good fit>"]
+  "strengths": ["<specific reason candidate is a good fit>"],
+  "jd_keywords": ["<8-15 short strings: tools, frameworks, languages, domains, methods mentioned in the title or description — only if explicitly stated; do not invent credentials or employers>"]
 }}
 
 Respond ONLY with the JSON array. No preamble, no markdown fences."""

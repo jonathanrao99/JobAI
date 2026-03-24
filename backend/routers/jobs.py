@@ -12,25 +12,35 @@ POST /api/jobs/:id/verdict  — manually override AI verdict
 
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 
 from backend.db.client import db
+from backend.errors import INTERNAL_ERROR, log_internal_error
 from backend.utils.salary_parse import parse_salary_range_from_text
 
 router = APIRouter()
 
 _SEARCH_MAX_LEN = 120
 
+# List endpoint omits large text fields unless include_description=true
+_JOB_LIST_COLUMNS_SLIM = (
+    "id,title,company,location,job_url,source_board,ats_platform,posted_at,scraped_at,"
+    "is_remote,ai_score,ai_verdict,jd_keywords,salary_min,salary_max,salary_currency,"
+    "requires_clearance,requires_sponsorship,company_size,glassdoor_rating,"
+    "has_recent_layoffs,has_mutual_connection,mutual_connection_name"
+)
 
-def _enrich_job_salary_fields(job: Optional[dict]) -> Optional[dict]:
+
+def _enrich_job_salary_fields(job: dict | None) -> dict | None:
     """Fill salary_min/max from description when DB columns are empty (legacy rows)."""
     if not job:
         return job
@@ -47,7 +57,7 @@ def _enrich_job_salary_fields(job: Optional[dict]) -> Optional[dict]:
     return enriched
 
 
-def _sanitize_search_term(raw: Optional[str]) -> Optional[str]:
+def _sanitize_search_term(raw: str | None) -> str | None:
     """Strip ILIKE wildcards and trim length so user input cannot broaden the pattern."""
     if not raw:
         return None
@@ -64,7 +74,7 @@ def _sanitize_search_term(raw: Optional[str]) -> Optional[str]:
 
 class VerdictOverride(BaseModel):
     verdict: str  # APPLY | MAYBE | SKIP
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class ScrapeRequest(BaseModel):
@@ -75,9 +85,9 @@ class ManualJobCreate(BaseModel):
     title: str
     company: str
     job_url: str
-    description: Optional[str] = None
-    location: Optional[str] = None
-    is_remote: Optional[bool] = None
+    description: str | None = None
+    location: str | None = None
+    is_remote: bool | None = None
     tailor: bool = False
 
 
@@ -86,12 +96,12 @@ class ManualJobCreate(BaseModel):
 
 def _apply_job_filters(
     query,
-    verdict: Optional[str],
-    source: Optional[str],
-    search: Optional[str],
+    verdict: str | None,
+    source: str | None,
+    search: str | None,
     min_score: int,
-    is_remote: Optional[bool],
-    since_days: Optional[int] = None,
+    is_remote: bool | None,
+    since_days: int | None = None,
 ):
     if verdict:
         # `ai_verdict` casing in DB is not guaranteed (e.g. `apply` vs `APPLY`).
@@ -110,22 +120,26 @@ def _apply_job_filters(
         if safe:
             query = query.or_(f"title.ilike.%{safe}%,company.ilike.%{safe}%")
     if since_days is not None and since_days > 0:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=since_days)).isoformat()
-        query = query.gte("scraped_at", cutoff)
+        # Match listing date (posted_at), not scrape ingest time. Fallback to scraped_at when posted_at is unknown.
+        cutoff_dt = datetime.now(UTC) - timedelta(days=since_days)
+        cutoff = cutoff_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        q = f'"{cutoff}"'
+        query = query.or_(f"posted_at.gte.{q},and(posted_at.is.null,scraped_at.gte.{q})")
     return query
 
 
 _stats_rpc_fallback_logged = False
+_analytics_rpc_fallback_logged = False
 
 
 def _count_jobs(
     client,
-    verdict: Optional[str] = None,
-    source: Optional[str] = None,
-    search: Optional[str] = None,
+    verdict: str | None = None,
+    source: str | None = None,
+    search: str | None = None,
     min_score: int = 0,
-    is_remote: Optional[bool] = None,
-    since_days: Optional[int] = None,
+    is_remote: bool | None = None,
+    since_days: int | None = None,
 ) -> int:
     q = client.table("jobs").select("id", count="exact", head=True)
     q = _apply_job_filters(q, verdict, source, search, min_score, is_remote, since_days)
@@ -133,7 +147,7 @@ def _count_jobs(
     return r.count if r.count is not None else 0
 
 
-def _stats_from_rpc(client) -> Optional[dict[str, Any]]:
+def _stats_from_rpc(client) -> dict[str, Any] | None:
     try:
         r = client.rpc("job_dashboard_stats").execute()
         raw = r.data
@@ -191,13 +205,22 @@ def _stats_from_rpc(client) -> Optional[dict[str, Any]]:
 
 
 def _stats_fallback(client) -> dict[str, Any]:
-    total = _count_jobs(client)
-    verdict_counts = {
-        "APPLY": _count_jobs(client, verdict="APPLY"),
-        "MAYBE": _count_jobs(client, verdict="MAYBE"),
-        "SKIP": _count_jobs(client, verdict="SKIP"),
-    }
-    remote_count = _count_jobs(client, is_remote=True)
+    def _count(**kwargs) -> int:
+        return _count_jobs(client, **kwargs)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+        fut_total = pool.submit(_count)
+        fut_apply = pool.submit(_count, verdict="APPLY")
+        fut_maybe = pool.submit(_count, verdict="MAYBE")
+        fut_skip = pool.submit(_count, verdict="SKIP")
+        fut_remote = pool.submit(_count, is_remote=True)
+        total = fut_total.result()
+        verdict_counts = {
+            "APPLY": fut_apply.result(),
+            "MAYBE": fut_maybe.result(),
+            "SKIP": fut_skip.result(),
+        }
+        remote_count = fut_remote.result()
 
     by_source: dict[str, int] = {}
     avg_score = 0.0
@@ -245,6 +268,35 @@ def _analytics_rows_since(client, cutoff_iso: str, max_rows: int) -> list[dict]:
     return rows
 
 
+def _analytics_from_rpc(client, days: int) -> dict[str, Any] | None:
+    try:
+        r = client.rpc("job_analytics_series", {"p_days": days}).execute()
+        raw = r.data
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        if not isinstance(raw, dict):
+            return None
+        series = raw.get("series")
+        if not isinstance(series, list):
+            return None
+        return {
+            "series": series,
+            "rows_used": int(raw.get("rows_used", 0) or 0),
+            "truncated": bool(raw.get("truncated", False)),
+        }
+    except Exception:
+        global _analytics_rpc_fallback_logged
+        if not _analytics_rpc_fallback_logged:
+            logger.info(
+                "Job analytics: using row-scan fallback (RPC job_analytics_series not in DB). "
+                "Apply the job_analytics_series() block from backend/db/schema.sql in Supabase SQL Editor."
+            )
+            _analytics_rpc_fallback_logged = True
+        return None
+
+
 # ── Routes (specific paths before /{job_id}) ──────────────────────────────
 
 
@@ -252,10 +304,19 @@ def _analytics_rows_since(client, cutoff_iso: str, max_rows: int) -> list[dict]:
 async def get_job_analytics(
     days: int = Query(30, ge=1, le=90, description="Rolling window in days"),
 ):
-    """Daily job counts by verdict (scraped_at) for charts. Caps rows scanned for safety."""
+    """Daily job counts by verdict (scraped_at) for charts. RPC aggregates in DB when available."""
     try:
         client = db()
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        from_rpc = _analytics_from_rpc(client, days)
+        if from_rpc is not None:
+            return {
+                "days": days,
+                "series": from_rpc["series"],
+                "rows_used": from_rpc["rows_used"],
+                "truncated": from_rpc["truncated"],
+            }
+
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         cutoff_iso = cutoff.replace(microsecond=0).isoformat()
         rows = _analytics_rows_since(client, cutoff_iso, max_rows=50_000)
 
@@ -283,8 +344,8 @@ async def get_job_analytics(
             "truncated": len(rows) >= 50_000,
         }
     except Exception as e:
-        logger.error(f"GET /jobs/analytics error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /jobs/analytics", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.get("/stats")
@@ -308,8 +369,8 @@ async def get_job_stats():
                 stats = _stats_fallback(client)
         return stats
     except Exception as e:
-        logger.error(f"GET /jobs/stats error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /jobs/stats", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.post("/scrape")
@@ -387,13 +448,15 @@ async def create_manual_job(body: ManualJobCreate, background_tasks: BackgroundT
             existing = client.table("jobs").select("*").eq("dedup_hash", dedup).single().execute()
             job_row = existing.data
         else:
-            raise HTTPException(status_code=500, detail=str(e))
+            log_internal_error("POST /jobs/manual upsert", e)
+            raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
     tailor_result = None
     if body.tailor and job_row:
         try:
-            from backend.agents.resume_agent import run_resume_agent
             import asyncio
+
+            from backend.agents.resume_agent import run_resume_agent
             tailor_result = await asyncio.to_thread(run_resume_agent, job_row)
         except Exception as e:
             logger.warning(f"Auto-tailor after manual add failed: {e}")
@@ -407,12 +470,16 @@ async def create_manual_job(body: ManualJobCreate, background_tasks: BackgroundT
 
 @router.get("")
 async def get_jobs(
-    verdict: Optional[str] = Query(None, description="APPLY | MAYBE | SKIP"),
-    source: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
+    verdict: str | None = Query(None, description="APPLY | MAYBE | SKIP"),
+    source: str | None = Query(None),
+    search: str | None = Query(None),
     min_score: int = Query(0, ge=0, le=10),
-    is_remote: Optional[bool] = Query(None),
-    since_days: Optional[int] = Query(None, ge=1, le=90, description="Only jobs from last N days"),
+    is_remote: bool | None = Query(None),
+    since_days: int | None = Query(None, ge=1, le=90, description="Only jobs from last N days"),
+    include_description: bool = Query(
+        False,
+        description="Include full description (large); board/search UIs should pass true",
+    ),
     limit: int = Query(50, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -420,7 +487,8 @@ async def get_jobs(
     try:
         client = db()
 
-        query = client.table("jobs").select("*", count="exact")
+        cols = "*" if include_description else _JOB_LIST_COLUMNS_SLIM
+        query = client.table("jobs").select(cols, count="exact")
         query = _apply_job_filters(query, verdict, source, search, min_score, is_remote, since_days)
         result = (
             query.order("scraped_at", desc=True)
@@ -429,7 +497,9 @@ async def get_jobs(
             .execute()
         )
 
-        rows = [_enrich_job_salary_fields(r) for r in (result.data or [])]
+        rows = result.data or []
+        if include_description:
+            rows = [_enrich_job_salary_fields(r) for r in rows]
         total = getattr(result, "count", None)
         total = int(total) if total is not None else len(rows)
         return {
@@ -442,8 +512,8 @@ async def get_jobs(
         }
 
     except Exception as e:
-        logger.error(f"GET /jobs error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /jobs", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.get("/{job_id}")
@@ -461,7 +531,8 @@ async def get_job(job_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("GET /jobs/{job_id}", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
 
 @router.post("/{job_id}/verdict")
@@ -486,4 +557,5 @@ async def override_verdict(job_id: str, body: VerdictOverride):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        log_internal_error("POST /jobs/{job_id}/verdict", e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None

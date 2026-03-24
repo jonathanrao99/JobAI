@@ -11,22 +11,45 @@ Flow:
 import asyncio
 import json
 import math
-from datetime import datetime, timezone
-from loguru import logger
+from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dateutil import parser as dateparser
+from loguru import logger
 
-from backend.utils.llm_client import call_llm, parse_json_response
-from backend.utils.dedup import pre_filter_by_keywords
-from backend.utils.salary_parse import parse_salary_range_from_text
-from backend.prompts.filter_prompt import FILTER_SYSTEM_PROMPT, build_filter_prompt
 from backend.db.client import db
-
+from backend.prompts.filter_prompt import FILTER_SYSTEM_PROMPT, build_filter_prompt
+from backend.utils.dedup import pre_filter_by_keywords
+from backend.utils.llm_client import call_llm, parse_json_response
+from backend.utils.salary_parse import parse_salary_range_from_text
 
 PROFILE_PATH = Path("data/candidate_profile.json")
 BATCH_SIZE = 10           # Jobs per LLM call
 CONCURRENT_BATCHES = 3    # Max simultaneous LLM calls
+
+
+def _count_by_source_board(jobs: list[dict]) -> dict[str, int]:
+    return dict(Counter((j.get("source_board") or "unknown") for j in jobs))
+
+
+def _normalize_jd_keywords(raw) -> list[str]:
+    """LLM output: 8–15 short strings; cap length for DB and UI."""
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        s = raw.strip()
+        return [s[:120]] if s else []
+    out: list[str] = []
+    if not isinstance(raw, list):
+        return out
+    for x in raw:
+        s = str(x).strip()[:120]
+        if s and s not in out:
+            out.append(s)
+        if len(out) >= 15:
+            break
+    return out
 
 
 def load_profile() -> dict:
@@ -48,7 +71,7 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
         response = await call_llm(
             messages=[{"role": "user", "content": prompt}],
             system=FILTER_SYSTEM_PROMPT,
-            max_tokens=2000,
+            max_tokens=4000,
             temperature=0.1,
             expect_json=True,
         )
@@ -69,6 +92,7 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
             job["ai_reason"] = result.get("reason", "")
             job["ai_missing_skills"] = result.get("missing_skills", [])
             job["ai_strengths"] = result.get("strengths", [])
+            job["jd_keywords"] = _normalize_jd_keywords(result.get("jd_keywords"))
             scored.append(job)
 
         return scored
@@ -81,6 +105,7 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
             j["ai_score"] = 5
             j["ai_verdict"] = "MAYBE"
             j["ai_reason"] = f"Scoring error — manual review recommended: {str(e)[:100]}"
+            j["jd_keywords"] = []
             fallback.append(j)
         return fallback
 
@@ -93,7 +118,21 @@ def run_filter_agent(jobs: list[dict]) -> dict:
     """
     if not jobs:
         logger.warning("Filter agent received empty job list")
-        return {"apply": [], "maybe": [], "skip": [], "total_scored": 0, "instant_rejects": 0, "llm_calls": 0}
+        return {
+            "apply": [],
+            "maybe": [],
+            "skip": [],
+            "total_scored": 0,
+            "instant_rejects": 0,
+            "llm_calls": 0,
+            "funnel_llm": {
+                "candidates_by_source": {},
+                "instant_reject_by_source": {},
+                "apply_by_source": {},
+                "maybe_by_source": {},
+                "skip_by_source": {},
+            },
+        }
 
     profile = load_profile()
     logger.info(f"🤖 Filter agent starting — {len(jobs)} jobs to score")
@@ -127,6 +166,13 @@ def run_filter_agent(jobs: list[dict]) -> dict:
         "total_scored": len(all_results),
         "instant_rejects": len(instant_rejects),
         "llm_calls": llm_calls,
+        "funnel_llm": {
+            "candidates_by_source": _count_by_source_board(candidates),
+            "instant_reject_by_source": _count_by_source_board(instant_rejects),
+            "apply_by_source": _count_by_source_board(apply),
+            "maybe_by_source": _count_by_source_board(maybe),
+            "skip_by_source": _count_by_source_board(skip),
+        },
     }
 
 
@@ -147,6 +193,7 @@ async def _run_all_batches(batches: list[list[dict]], profile: dict, total_batch
 
 
 JOB_DESCRIPTION_DB_MAX = 50_000
+UPSERT_CHUNK_SIZE = 200
 
 
 def save_scored_jobs_to_db(scored_jobs: list[dict]) -> dict:
@@ -158,7 +205,7 @@ def save_scored_jobs_to_db(scored_jobs: list[dict]) -> dict:
     inserted = 0
     skipped = 0
     errors = 0
-
+    rows: list[dict] = []
     for job in scored_jobs:
         try:
             desc_raw = job.get("description") or ""
@@ -171,7 +218,7 @@ def save_scored_jobs_to_db(scored_jobs: list[dict]) -> dict:
                 if sx is not None:
                     salary_max = sx
 
-            row = {
+            rows.append({
                 "title": job.get("title", ""),
                 "company": job.get("company", ""),
                 "location": job.get("location", ""),
@@ -183,28 +230,30 @@ def save_scored_jobs_to_db(scored_jobs: list[dict]) -> dict:
                 "ai_score": job.get("ai_score"),
                 "ai_verdict": job.get("ai_verdict"),
                 "ai_reason": job.get("ai_reason"),
+                "jd_keywords": _normalize_jd_keywords(job.get("jd_keywords")),
                 "salary_min": salary_min,
                 "salary_max": salary_max,
                 "is_remote": bool(job.get("is_remote", False)),
-                # Some scrapers (or upstream parsing) may produce "nan"/"".
-                # Supabase will reject those for timestamp columns, so we normalize to None.
                 "posted_at": _sanitize_posted_at(job.get("posted_at")),
-            }
+            })
+        except Exception as e:
+            logger.error(f"Row build error for {job.get('company')} / {job.get('title')}: {e}")
+            errors += 1
 
+    for i in range(0, len(rows), UPSERT_CHUNK_SIZE):
+        chunk = rows[i:i + UPSERT_CHUNK_SIZE]
+        try:
             result = client.table("jobs").upsert(
-                row,
+                chunk,
                 on_conflict="dedup_hash",
                 ignore_duplicates=True,
             ).execute()
-
-            if result.data:
-                inserted += 1
-            else:
-                skipped += 1
-
+            inserted_chunk = len(result.data or [])
+            inserted += inserted_chunk
+            skipped += max(0, len(chunk) - inserted_chunk)
         except Exception as e:
-            logger.error(f"DB write error for {job.get('company')} / {job.get('title')}: {e}")
-            errors += 1
+            logger.error(f"DB chunk write error ({i}:{i + len(chunk)}): {e}")
+            errors += len(chunk)
 
     logger.info(f"💾 DB write: {inserted} inserted, {skipped} duplicates skipped, {errors} errors")
     return {"inserted": inserted, "skipped_duplicates": skipped, "errors": errors}
@@ -226,10 +275,10 @@ def _sanitize_posted_at(val) -> str | None:
     if isinstance(val, datetime):
         dt = val
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt.isoformat()
 
-    if isinstance(val, (int, float)):
+    if isinstance(val, int | float):
         # Handle NaN floats.
         try:
             if isinstance(val, float) and math.isnan(val):
@@ -253,7 +302,7 @@ def _sanitize_posted_at(val) -> str | None:
         try:
             dt = datetime.fromisoformat(s)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             return dt.isoformat()
         except Exception:
             pass
@@ -261,7 +310,7 @@ def _sanitize_posted_at(val) -> str | None:
         try:
             dt = dateparser.parse(s)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
             return dt.isoformat()
         except Exception:
             return None

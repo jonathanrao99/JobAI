@@ -16,15 +16,18 @@ RESUME WRITING RULES (follow all of them):
 2. Every bullet point MUST contain at least one quantified metric (%, $, x speedup, number of users, reduction in time, accuracy %). If the original has none, add a realistic one based on context.
 3. Bullet structure: [Action verb] + [what you did] + [technology used] + [measurable result]. Example: "Engineered real-time ETL pipeline using Apache Kafka and Python, reducing data latency by 78% across 3 production systems serving 50K daily users."
 4. Mirror the job description's exact keywords in the summary and top bullets. Don't stuff — weave them in naturally.
-5. Summary must be 2-3 sentences max. Start with the candidate's strongest qualification for THIS specific role.
+5. Professional summary: 1 tight paragraph (about 90–140 words) unless the one-page constraint forces shorter. Start with the candidate's strongest qualification for THIS specific role. Tone must be natural and human, not generic or overly formal. Use concrete wording, avoid cliches, and mention real scope/impact in plain language. If profile.education is present, any degree mention MUST use profile.education.university exactly (e.g. Texas A&M University–Victoria). Never write "University of Houston" for this candidate's graduate program.
 6. Remove any bullet that isn't directly relevant to this job. Replace with stronger relevant content.
 7. Never use weak verbs: helped, worked on, assisted, participated, was responsible for, utilized.
-8. Skills section: list only skills that appear in the job description OR are directly relevant. Remove irrelevant ones.
-9. Output ONLY valid JSON. No markdown, no explanation.
+8. The LaTeX template includes a fixed Technical Skills block — still produce an accurate skills_line in JSON for metadata; do not assume skills are only from bullets.
+9. ONE-PAGE CONSTRAINT: The PDF is single-column US Letter with Technical Skills, Professional Summary, Experience, Projects, Education. All text MUST fit on exactly ONE page. Fill the page with high-signal content, not whitespace. Write dense bullets (~130–170 chars each) so the resume is visually full.
+10. Bullet budgets: at most 4 bullets per experience role; at most 4 bullets per project (use 3 if trimming for length). Merge weak bullets rather than padding.
+11. Projects: same count and order as the structured resume. Prioritize JD-relevant metrics and keywords.
+12. Output ONLY valid JSON. No markdown, no explanation.
 
 Your JSON MUST match this exact schema (keys required):
 {
-  "summary": "2-3 sentence professional summary tailored to this exact role",
+  "summary": "One professional summary paragraph (see rule 5) tailored to this exact role",
   "skills_line": "comma-separated skills string, ordered by relevance to JD",
   "experience": [
     {
@@ -50,7 +53,7 @@ Rules for the JSON:
 - Preserve the SAME number and order of experience entries as in the structured resume below.
 - For experience[i], set "role" EXACTLY equal to experience[i].role_line from the structured JSON (verbatim, including tabs). Set "company" EXACTLY equal to experience[i].company_line (verbatim). Only rewrite the "bullets" array.
 - Preserve the SAME number and order of projects as in the structured resume below. Match project names to the resume.
-- Each bullets array should have at most as many bullets as the template has for that role/project (you may use fewer if trimming weak content).
+- Each bullets array may have FEWER bullets than the template if needed for the one-page constraint; never exceed the per-role / per-project counts in rule 10.
 - Escape any double quotes inside strings as \\". Do not include raw newlines inside JSON strings."""
 
 

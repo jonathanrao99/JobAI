@@ -1,0 +1,130 @@
+/* App sidebar — aligned with Impeccable pages */
+
+.app-nav {
+  width: 200px;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  height: 100vh;
+  position: sticky;
+  top: 0;
+}
+
+.app-nav__brand {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.app-nav__kicker {
+  font-size: 10px;
+  color: var(--text-muted);
+  letter-spacing: 0.28em;
+  margin-bottom: 4px;
+}
+
+.app-nav__version {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-board-sans, ui-sans-serif, sans-serif);
+}
+
+.app-nav__links {
+  padding: 8px 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.app-nav__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  background: transparent;
+  border-left: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 400;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.app-nav__link:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.app-nav__link.is-active {
+  color: var(--accent);
+  background: var(--accent-glow);
+  border-left-color: var(--accent);
+  font-weight: 600;
+}
+
+.app-nav__link:focus-visible {
+  outline: 2px solid rgba(248, 250, 252, 0.45);
+  outline-offset: -2px;
+}
+
+.app-nav__icon {
+  width: 18px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.app-nav__footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.app-nav__status {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.app-nav__status-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.app-nav__status-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.app-nav__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.app-nav__status-dot--ok {
+  background: var(--green);
+}
+
+.app-nav__status-dot--bad {
+  background: var(--red);
+}
+
+.app-nav__status-text {
+  font-size: 11px;
+}
+
+.app-nav__status-text--ok {
+  color: var(--green);
+}
+
+.app-nav__status-text--bad {
+  color: var(--red);
+}
+
+.app-nav__jobs-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}

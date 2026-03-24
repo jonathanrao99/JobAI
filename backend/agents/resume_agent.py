@@ -19,7 +19,11 @@ from loguru import logger
 from slugify import slugify
 
 from backend.db.client import db
-from backend.agents.latex_resume_agent import render_latex_resume, compile_pdf
+from backend.agents.latex_resume_agent import (
+    compile_pdf,
+    count_pdf_pages,
+    render_latex_resume,
+)
 from backend.prompts.resume_prompt import (
     RESUME_TAILOR_SYSTEM_PROMPT,
     build_resume_tailoring_user_message,
@@ -30,6 +34,58 @@ PROFILE_PATH = Path("data/candidate_profile.json")
 RESUME_BASE_PATH = Path("data/resumes/resume_base.docx")
 TAILORED_DIR = Path("data/resumes/tailored")
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Post-LLM caps: allow generous content so the page fills naturally; strict pass trims if >1 page.
+_MAX_PROJECTS_PDF = 3
+_SUMMARY_WORDS_SOFT = 120
+_SUMMARY_WORDS_STRICT = 80
+_MAX_EXP_BULLETS_SOFT = 4
+_MAX_EXP_BULLETS_STRICT = 3
+_MAX_PROJ_BULLETS_SOFT = 4
+_MAX_PROJ_BULLETS_STRICT = 3
+
+
+def _clip_resume_for_one_page(
+    data: dict[str, Any],
+    *,
+    strict: bool = False,
+) -> None:
+    """Trim summary, experience bullets, and projects in-place for single-page PDF."""
+    exp_max = _MAX_EXP_BULLETS_STRICT if strict else _MAX_EXP_BULLETS_SOFT
+    proj_b_max = _MAX_PROJ_BULLETS_STRICT if strict else _MAX_PROJ_BULLETS_SOFT
+    summary_cap = _SUMMARY_WORDS_STRICT if strict else _SUMMARY_WORDS_SOFT
+
+    summary = str(data.get("summary") or "").strip()
+    if summary:
+        words = summary.split()
+        if len(words) > summary_cap:
+            data["summary"] = " ".join(words[:summary_cap]).rstrip(",;:") + "..."
+
+    exp = data.get("experience")
+    if isinstance(exp, list):
+        for entry in exp:
+            if not isinstance(entry, dict):
+                continue
+            bullets = entry.get("bullets")
+            if not isinstance(bullets, list):
+                continue
+            cleaned = [str(b).strip() for b in bullets if str(b).strip()]
+            entry["bullets"] = cleaned[:exp_max]
+
+    proj = data.get("projects")
+    if not isinstance(proj, list):
+        return
+
+    clipped_projects: list[dict[str, Any]] = []
+    for p in proj[:_MAX_PROJECTS_PDF]:
+        if not isinstance(p, dict):
+            continue
+        bullets = p.get("bullets")
+        if isinstance(bullets, list):
+            cleaned = [str(b).strip() for b in bullets if str(b).strip()]
+            p["bullets"] = cleaned[:proj_b_max]
+        clipped_projects.append(p)
+    data["projects"] = clipped_projects
 
 
 @dataclass
@@ -115,9 +171,28 @@ def run_resume_agent(job: dict) -> dict:
     basename = f"{company_slug}_{role_slug}"
 
     exp_meta = _extract_experience_meta(structure.experience_blocks)
-    proj_meta = _extract_project_meta(structure.project_blocks)
+    proj_meta_full = _extract_project_meta(structure.project_blocks)
+
+    _clip_resume_for_one_page(data, strict=False)
+    proj_meta = proj_meta_full[: len(data.get("projects") or [])]
     tex_content = render_latex_resume(data, exp_meta, proj_meta)
     tex_path, pdf_path = compile_pdf(tex_content, TAILORED_DIR, basename)
+
+    if pdf_path:
+        pages = count_pdf_pages(pdf_path)
+        if pages is not None and pages > 1:
+            logger.warning(
+                f"Resume PDF has {pages} pages; applying stricter clip and recompiling"
+            )
+            _clip_resume_for_one_page(data, strict=True)
+            proj_meta = proj_meta_full[: len(data.get("projects") or [])]
+            tex_content = render_latex_resume(data, exp_meta, proj_meta)
+            tex_path, pdf_path = compile_pdf(tex_content, TAILORED_DIR, basename)
+            pages_after = count_pdf_pages(pdf_path) if pdf_path else None
+            if pages_after is not None and pages_after > 1:
+                logger.warning(
+                    f"Resume PDF still has {pages_after} pages after strict clip"
+                )
 
     pdf_path_str = (
         str(pdf_path.resolve().relative_to(REPO_ROOT.resolve())) if pdf_path else None
