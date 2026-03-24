@@ -309,30 +309,31 @@ def run_contact_enrichment_agent(job: dict[str, Any]) -> dict[str, Any]:
         if email_actor and contacts and email_top_k > 0:
             contacts.sort(key=lambda c: _score_contact(c, role_tokens), reverse=True)
             topk = [c["linkedin_url"] for c in contacts[:email_top_k] if c.get("linkedin_url")]
-            email_items = _run_apify_actor(
-                email_actor,
-                {
-                    "profiles": topk,
-                    "company": company,
-                    "location": location,
-                },
-            )
-            apify_called += 1
-            by_linkedin: dict[str, str] = {}
-            for item in email_items:
-                if not isinstance(item, dict):
-                    continue
-                li = _normalize_linkedin_url(str(item.get("linkedin_url") or item.get("linkedin") or ""))
-                em = str(item.get("email") or item.get("work_email") or "").strip().lower()
-                if li and em:
-                    by_linkedin[li] = em
-            for c in contacts:
-                li = c.get("linkedin_url") or ""
-                if li in by_linkedin:
-                    c["email"] = by_linkedin[li]
-                    c["email_verified"] = True
-                    c["source"] = "apollo"
-                    emails_enriched += 1
+            if topk:
+                email_items = _run_apify_actor(
+                    email_actor,
+                    {
+                        "profiles": topk,
+                        "company": company,
+                        "location": location,
+                    },
+                )
+                apify_called += 1
+                by_linkedin: dict[str, str] = {}
+                for item in email_items:
+                    if not isinstance(item, dict):
+                        continue
+                    li = _normalize_linkedin_url(str(item.get("linkedin_url") or item.get("linkedin") or ""))
+                    em = str(item.get("email") or item.get("work_email") or "").strip().lower()
+                    if li and em:
+                        by_linkedin[li] = em
+                for c in contacts:
+                    li = c.get("linkedin_url") or ""
+                    if li in by_linkedin:
+                        c["email"] = by_linkedin[li]
+                        c["email_verified"] = True
+                        c["source"] = "apollo"
+                        emails_enriched += 1
 
     # DB fallback: fill remaining slots from existing contacts table
     apify_urls = {c.get("linkedin_url") or "" for c in contacts}

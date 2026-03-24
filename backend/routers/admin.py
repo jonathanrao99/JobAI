@@ -37,6 +37,27 @@ def _count_jobs_posted_since(client, since_iso: str) -> int | None:
         return None
 
 
+def _count_jobs_posted_window(
+    client,
+    *,
+    gte_iso: str | None = None,
+    lt_iso: str | None = None,
+) -> int | None:
+    """Count rows where gte_iso <= posted_at < lt_iso (omit bound if None)."""
+    try:
+        q = client.table("jobs").select("id", count="exact", head=True)
+        if gte_iso:
+            q = q.gte("posted_at", gte_iso)
+        if lt_iso:
+            q = q.lt("posted_at", lt_iso)
+        res = q.execute()
+        if getattr(res, "count", None) is not None:
+            return int(res.count)
+        return 0
+    except Exception:
+        return None
+
+
 @router.get("/ops-summary")
 async def ops_summary():
     try:
@@ -118,6 +139,12 @@ async def ops_summary():
             "posted_within_24h": _count_jobs_posted_since(client, since_24h),
             "posted_within_72h": _count_jobs_posted_since(client, since_72h),
             "posted_within_7d": _count_jobs_posted_since(client, since_7d),
+            "posted_between_24h_and_72h_ago": _count_jobs_posted_window(
+                client, gte_iso=since_72h, lt_iso=since_24h
+            ),
+            "posted_between_72h_and_7d_ago": _count_jobs_posted_window(
+                client, gte_iso=since_7d, lt_iso=since_72h
+            ),
         }
 
         return {

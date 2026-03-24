@@ -59,8 +59,23 @@
   color: var(--text-muted);
 }
 
+.admin-panel__note--tight {
+  margin-top: 8px;
+}
+
+.admin-code {
+  font-size: 0.82em;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .admin-grid--recency {
   margin-bottom: 0;
+}
+
+.admin-grid--recency-two {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .admin-title {

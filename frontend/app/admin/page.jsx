@@ -120,11 +120,18 @@ export default function AdminPage() {
 
           <section className="admin-panel admin-panel--compact">
             <h2 className="admin-panel__title">Jobs in DB by posted date</h2>
-            <p className="admin-panel__note">Cumulative counts (posted_at in Supabase).</p>
+            <p className="admin-panel__note">
+              Based on <code className="admin-code">jobs.posted_at</code>. Cumulative = all jobs posted on or after the cutoff.
+            </p>
             <div className="admin-grid admin-grid--recency">
-              <StatCard label="≤ 24h" value={fmtCount(recency.posted_within_24h)} />
-              <StatCard label="≤ 72h" value={fmtCount(recency.posted_within_72h)} />
-              <StatCard label="≤ 7d" value={fmtCount(recency.posted_within_7d)} />
+              <StatCard label="≤ 24h" value={fmtCount(recency.posted_within_24h)} hint="Cumulative" />
+              <StatCard label="≤ 72h" value={fmtCount(recency.posted_within_72h)} hint="Cumulative" />
+              <StatCard label="≤ 7d" value={fmtCount(recency.posted_within_7d)} hint="Cumulative" />
+            </div>
+            <p className="admin-panel__note admin-panel__note--tight">Non-overlapping bands (sum with ≤24h ≈ ≤7d when posted_at is set).</p>
+            <div className="admin-grid admin-grid--recency admin-grid--recency-two">
+              <StatCard label="72h–7d ago" value={fmtCount(recency.posted_between_72h_and_7d_ago)} />
+              <StatCard label="24–72h ago" value={fmtCount(recency.posted_between_24h_and_72h_ago)} />
             </div>
           </section>
 

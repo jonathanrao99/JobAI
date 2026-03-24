@@ -229,6 +229,7 @@ export function usePrepareApplication() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["applications"] });
+      qc.invalidateQueries({ queryKey: ["admin", "opsSummary"] });
     },
   });
 }
