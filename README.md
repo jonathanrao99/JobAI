@@ -37,6 +37,8 @@ docker compose up -d           # Redis + Celery + Flower
 
 Open http://localhost:5173. In **development**, [`frontend/hooks/useJobs.js`](frontend/hooks/useJobs.js) resolves `/api/...` to `http://<same-hostname>:8000/...` so the browser does not use Next’s dev proxy for API calls (avoids timeouts on long routes such as `POST /api/applications/{id}/prepare`). Set `NEXT_PUBLIC_API_URL` to override (e.g. production). [`scripts/dev-api.sh`](scripts/dev-api.sh) binds Uvicorn to `0.0.0.0:8000` so `http://<LAN-IP>:5173` can reach the API; add that origin to `FRONTEND_URL` for CORS.
 
+**Vercel:** In the project’s **Settings → General → Root Directory**, set **`frontend`** so the Next.js build writes `.next` where Vercel expects. Config lives in [`frontend/vercel.json`](frontend/vercel.json). Redeploy after changing Root Directory.
+
 **If you see `ENOENT` / `app-build-manifest.json` / `_buildManifest.js.tmp`:** Turbopack + Fast Refresh can race when the cache is rewritten. The API used to reload on *every* repo file change (including `frontend/.next`), which made this worse — `scripts/dev-api.sh` now uses **`--reload-dir backend`** only. Default **`npm run dev`** in `frontend/` uses webpack (not `--turbopack`) for more stable HMR; use `npm run dev:turbo --prefix frontend` if you want Turbopack. To fix a broken cache: stop dev, run **`npm run clean:frontend`** (or `bash scripts/clean-frontend-next.sh`), then **`npm run dev`** again.
 
 ### Development
