@@ -797,10 +797,22 @@ def _scrape_one_company(company: dict, config) -> list[dict]:
 
 
 def _scrape_ats_companies(scraper_agent_cfg: dict | None = None) -> list[dict]:
-    """Scrape all company career pages concurrently with ThreadPoolExecutor."""
+    """Scrape all company career pages concurrently with ThreadPoolExecutor.
+
+    `ats_as_completed_wait_seconds` (legacy: `ats_company_timeout_seconds`) is passed to
+    `concurrent.futures.as_completed(..., timeout=...)`. In CPython that timeout is the
+    maximum seconds to wait for *each next* completed future, not a single wall-clock budget
+    for all companies combined.
+    """
     sa = scraper_agent_cfg or {}
     max_workers = max(1, int(sa.get("ats_max_workers", ATS_MAX_WORKERS)))
-    company_timeout = max(5, int(sa.get("ats_company_timeout_seconds", ATS_COMPANY_TIMEOUT)))
+    as_completed_wait = max(
+        5,
+        int(
+            sa.get("ats_as_completed_wait_seconds")
+            or sa.get("ats_company_timeout_seconds", ATS_COMPANY_TIMEOUT)
+        ),
+    )
 
     companies_dir = Path("companies")
     if not companies_dir.exists():
@@ -822,7 +834,7 @@ def _scrape_ats_companies(scraper_agent_cfg: dict | None = None) -> list[dict]:
     yaml_files = list(companies_dir.glob("*.yaml")) + list(companies_dir.glob("*.yml"))
     logger.info(
         f"   ATS: loading {len(yaml_files)} company configs "
-        f"(max_workers={max_workers}, timeout={company_timeout}s)"
+        f"(max_workers={max_workers}, as_completed_wait={as_completed_wait}s)"
     )
 
     import yaml as _yaml
@@ -849,7 +861,7 @@ def _scrape_ats_companies(scraper_agent_cfg: dict | None = None) -> list[dict]:
         }
 
         try:
-            for future in as_completed(future_map, timeout=company_timeout):
+            for future in as_completed(future_map, timeout=as_completed_wait):
                 company = future_map[future]
                 stem = company.get("_yaml_stem", company.get("name", "?"))
                 try:
@@ -875,8 +887,11 @@ def _scrape_ats_companies(scraper_agent_cfg: dict | None = None) -> list[dict]:
         sample = ", ".join(timed_out_stems[:8])
         more = f" (+{len(timed_out_stems) - 8} more)" if len(timed_out_stems) > 8 else ""
         logger.warning(
-            f"   ATS: {len(timed_out_stems)} company scrape(s) exceeded {company_timeout}s "
-            f"(sample: {sample}{more}). Raise ats_company_timeout_seconds or lower ats_max_workers in config.yaml."
+            f"   ATS: {len(timed_out_stems)} company scrape(s) still pending after "
+            f"as_completed waited {as_completed_wait}s per completed future "
+            f"(sample: {sample}{more}). "
+            "Raise ats_as_completed_wait_seconds (or legacy ats_company_timeout_seconds) "
+            "or lower ats_max_workers in config.yaml."
         )
 
     logger.info(

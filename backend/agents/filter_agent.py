@@ -69,9 +69,13 @@ _FILTER_JSON_REPAIR_SYSTEM = (
 )
 
 
-async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_batches: int) -> list[dict]:
-    """Score a single batch of jobs via LLM. Returns list of scored job dicts."""
+async def _score_batch(
+    batch: list[dict], profile: dict, batch_num: int, total_batches: int
+) -> tuple[list[dict], int]:
+    """Score a single batch via LLM. Returns (scored jobs, number of LLM HTTP round-trips)."""
     logger.info(f"   Scoring batch {batch_num}/{total_batches} ({len(batch)} jobs)...")
+
+    llm_http_calls = 0
 
     try:
         prompt = build_filter_prompt(batch, profile)
@@ -82,6 +86,7 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
             temperature=0.1,
             expect_json=True,
         )
+        llm_http_calls += 1
 
         try:
             results = parse_json_response(response)
@@ -99,6 +104,7 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
                 temperature=0.0,
                 expect_json=True,
             )
+            llm_http_calls += 1
             results = parse_json_response(repaired)
 
         if not isinstance(results, list):
@@ -119,7 +125,7 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
             job["jd_keywords"] = _normalize_jd_keywords(result.get("jd_keywords"))
             scored.append(job)
 
-        return scored
+        return scored, llm_http_calls
 
     except Exception as e:
         logger.error(f"   Batch {batch_num} failed: {e}")
@@ -131,7 +137,7 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
             j["ai_reason"] = f"Scoring error — manual review recommended: {str(e)[:100]}"
             j["jd_keywords"] = []
             fallback.append(j)
-        return fallback
+        return fallback, llm_http_calls
 
 
 def run_filter_agent(jobs: list[dict]) -> dict:
@@ -149,6 +155,7 @@ def run_filter_agent(jobs: list[dict]) -> dict:
             "total_scored": 0,
             "instant_rejects": 0,
             "llm_calls": 0,
+            "filter_batches": 0,
             "funnel_llm": {
                 "candidates_by_source": {},
                 "instant_reject_by_source": {},
@@ -168,8 +175,7 @@ def run_filter_agent(jobs: list[dict]) -> dict:
     total_batches = len(batches)
     logger.info(f"   {total_batches} batches of ~{BATCH_SIZE} (concurrency={max(1, int(getattr(settings, 'filter_llm_concurrent_batches', 2) or 2))})")
 
-    scored = asyncio.run(_run_all_batches(batches, profile, total_batches))
-    llm_calls = total_batches
+    scored, llm_calls = asyncio.run(_run_all_batches(batches, profile, total_batches))
 
     all_results = scored + instant_rejects
     all_results.sort(key=lambda x: x.get("ai_score", 0), reverse=True)
@@ -180,7 +186,7 @@ def run_filter_agent(jobs: list[dict]) -> dict:
 
     logger.info(
         f"✅ Filter complete: {len(apply)} APPLY, {len(maybe)} MAYBE, "
-        f"{len(skip)} SKIP | {llm_calls} LLM calls"
+        f"{len(skip)} SKIP | {llm_calls} LLM HTTP calls ({total_batches} batches)"
     )
 
     return {
@@ -190,6 +196,7 @@ def run_filter_agent(jobs: list[dict]) -> dict:
         "total_scored": len(all_results),
         "instant_rejects": len(instant_rejects),
         "llm_calls": llm_calls,
+        "filter_batches": total_batches,
         "funnel_llm": {
             "candidates_by_source": _count_by_source_board(candidates),
             "instant_reject_by_source": _count_by_source_board(instant_rejects),
@@ -200,24 +207,28 @@ def run_filter_agent(jobs: list[dict]) -> dict:
     }
 
 
-async def _run_all_batches(batches: list[list[dict]], profile: dict, total_batches: int) -> list[dict]:
-    """Process all batches with bounded concurrency using a semaphore."""
+async def _run_all_batches(
+    batches: list[list[dict]], profile: dict, total_batches: int
+) -> tuple[list[dict], int]:
+    """Process all batches with bounded concurrency; stagger runs before acquiring the semaphore."""
     concurrent = max(1, int(getattr(settings, "filter_llm_concurrent_batches", 2) or 2))
     stagger_ms = max(0, int(getattr(settings, "filter_llm_batch_stagger_ms", 0) or 0))
     sem = asyncio.Semaphore(concurrent)
 
     async def _limited(batch, num):
+        if stagger_ms and num > 1:
+            await asyncio.sleep((stagger_ms / 1000.0) * (num - 1))
         async with sem:
-            if stagger_ms and num > 1:
-                await asyncio.sleep((stagger_ms / 1000.0) * (num - 1))
             return await _score_batch(batch, profile, num, total_batches)
 
     tasks = [_limited(batch, i + 1) for i, batch in enumerate(batches)]
     results = await asyncio.gather(*tasks)
-    flat = []
-    for r in results:
-        flat.extend(r)
-    return flat
+    flat: list[dict] = []
+    llm_calls = 0
+    for rows, n in results:
+        flat.extend(rows)
+        llm_calls += n
+    return flat, llm_calls
 
 
 JOB_DESCRIPTION_DB_MAX = 50_000

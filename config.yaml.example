@@ -232,7 +232,9 @@ scraper_agent:
   # max_apify_actor_runs: 40
   # ATS parallel scrape tuning (optional):
   # ats_max_workers: 6
-  # ats_company_timeout_seconds: 35
+  # as_completed(..., timeout=) — max seconds to wait for *each next* completed future (CPython),
+  # not one wall-clock budget for all companies. Legacy alias: ats_company_timeout_seconds.
+  # ats_as_completed_wait_seconds: 35
 
   # Optional: extra Apify Store actors (requires APIFY_API_TOKEN). Each run calls
   # per search query. Do not add shahidirfan/dice-job-scraper here — Dice is built in.

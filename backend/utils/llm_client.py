@@ -5,7 +5,9 @@ Universal LLM caller with simple sequential fallback.
 
 Each call_llm invocation independently tries providers in order:
   anthropic → google → openai → openrouter
-No shared mutable state between calls — safe for concurrent use.
+Per-call provider attempts do not share mutable state. Process-global flags
+(_openai_auth_failed, one-time placeholder-key warning) intentionally disable
+OpenAI for the lifetime of the process after bad auth or invalid key shape.
 """
 
 import asyncio

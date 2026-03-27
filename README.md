@@ -68,6 +68,7 @@ Tune the optional `scraper_agent` block in `config.yaml` (see `config.yaml.examp
 - **`locations`** — list of location strings for JobSpy (defaults to `target_locations` when omitted). Combined with `search_queries`, total fetches are capped by **`jobspy_max_fetch_combos`** to avoid runaway runtime.
 - **`max_jobs_per_run`** — after hash + normalized **URL** dedupe, jobs are **pre-ranked** (title overlap with `target_job_titles`, remote flag, recency) so the cap keeps the strongest rows for the LLM.
 - **`description_backfill_max`** — bounded HTTP fetches to fill empty/short descriptions before filtering (improves match quality without scraping everything twice).
+- **`ats_max_workers` / `ats_as_completed_wait_seconds`** — parallel ATS company scrapes. The wait value is passed to `concurrent.futures.as_completed(timeout=...)`: in CPython it is the **maximum seconds to wait for each next completed future**, not a single wall-clock cap for every company. Legacy YAML key: `ats_company_timeout_seconds`.
 
 Each completed scrape stores **`funnel_by_source`** on the `agent_runs` row (`metadata`): per `source_board`, counts for `raw`, `post_dedup`, `to_llm`, `instant_reject`, and LLM `apply` / `maybe` / `skip`. Use that to see which sources feed good matches.
 
