@@ -159,6 +159,7 @@ def run_resume_agent(job: dict) -> dict:
         max_tokens=8000,
         temperature=0.2,
         expect_json=True,
+        strict_json_object=True,
     )
     data = parse_json_response(raw)
     if not isinstance(data, dict):

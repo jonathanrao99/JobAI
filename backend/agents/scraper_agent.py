@@ -52,6 +52,15 @@ ATS_COMPANY_TIMEOUT = 20
 
 APIFY_TIMEOUT = 120        # Max seconds to wait for an Apify sync run
 
+
+class ApifyActorNotFoundError(Exception):
+    """Actor ID does not exist in Apify store (404 record-not-found)."""
+
+    def __init__(self, actor_id: str, detail: str = ""):
+        self.actor_id = actor_id
+        super().__init__(detail or actor_id)
+
+
 DEFAULT_JOBSPY_MAX_COMBOS = 300
 DEFAULT_DESC_MIN_CHARS = 80
 DEFAULT_DESC_BACKFILL_MAX = 40
@@ -280,13 +289,11 @@ def run_scraper_agent(dry_run: bool = False) -> dict:
     runtime_profile = (sa.get("runtime_profile") or settings.scraper_runtime_profile or "balanced").strip().lower()
 
     search_queries = _build_search_queries(sa, apply_cfg)
-    jobspy_sites = sa.get("jobspy_sites") or [
-        "linkedin",
-        "indeed",
-        "zip_recruiter",
-        "google",
-        "dice",
-    ]
+    jobspy_sites = sa.get("jobspy_sites")
+    if jobspy_sites is None:
+        jobspy_sites = ["linkedin", "indeed", "zip_recruiter", "google"]
+        if sa.get("jobspy_include_dice"):
+            jobspy_sites.append("dice")
     results_per_query = int(sa.get("results_per_query", RESULTS_PER_QUERY))
     hours_old = int(sa.get("hours_old", HOURS_OLD))
     max_jobs_cap = int(sa.get("max_jobs_per_run", MAX_JOBS_PER_RUN))
@@ -338,7 +345,7 @@ def run_scraper_agent(dry_run: bool = False) -> dict:
         all_jobs.extend(board_jobs)
         logger.info(f"   job boards (Adzuna/Jooble): {len(board_jobs)} raw jobs")
 
-    ats_jobs = _scrape_ats_companies()
+    ats_jobs = _scrape_ats_companies(sa)
     if len(ats_jobs) > max_results_per_source:
         ats_jobs = _prerank_jobs_for_cap(ats_jobs, search_queries)[:max_results_per_source]
     all_jobs.extend(ats_jobs)
@@ -637,24 +644,7 @@ def _scrape_apify_config_actors(
         return []
     specs = sa.get("apify_actors")
     if not isinstance(specs, list) or not specs:
-        specs = [
-            {
-                "id": "horizon_datajobs/us-wellfound-jobs",
-                "enabled": True,
-                "source_board": "wellfound",
-                "mapper": "flex",
-                "results_wanted": max(10, int(results_default / 2)),
-                "input": {"query": "{query}", "location": "{location}", "maxItems": max(10, int(results_default / 2))},
-            },
-            {
-                "id": "horizon_datajobs/us-builtin-jobs",
-                "enabled": True,
-                "source_board": "builtin",
-                "mapper": "flex",
-                "results_wanted": max(10, int(results_default / 2)),
-                "input": {"query": "{query}", "location": "{location}", "maxItems": max(10, int(results_default / 2))},
-            },
-        ]
+        specs = []
 
     from backend.scrapers.apify_mappers import get_mapper
 
@@ -663,6 +653,9 @@ def _scrape_apify_config_actors(
     loc = (default_location or "").strip() or "United States"
 
     actor_runs = 0
+    skipped_missing: set[str] = set()
+    apify_warned: set[str] = set()
+
     for spec in specs:
         if not isinstance(spec, dict):
             continue
@@ -670,6 +663,8 @@ def _scrape_apify_config_actors(
             continue
         actor_id = (spec.get("id") or "").strip()
         if not actor_id:
+            continue
+        if actor_id in skipped_missing:
             continue
         if actor_id == "shahidirfan/dice-job-scraper":
             logger.debug("   apify_actors: skip shahidirfan/dice-job-scraper (built-in Dice path)")
@@ -693,8 +688,17 @@ def _scrape_apify_config_actors(
                         input_data["results_wanted"] = rw
                 items = _run_apify_actor(actor_id, input_data)
                 actor_runs += 1
+            except ApifyActorNotFoundError as e:
+                if actor_id not in skipped_missing:
+                    skipped_missing.add(actor_id)
+                    logger.warning(
+                        f"   Apify actor not found (404), skipping for this run: {actor_id} ({e})"
+                    )
+                break
             except Exception as e:
-                logger.warning(f"   Apify actor {actor_id}: {e}")
+                if actor_id not in apify_warned:
+                    apify_warned.add(actor_id)
+                    logger.warning(f"   Apify actor {actor_id}: {e}")
                 continue
             if not isinstance(items, list):
                 continue
@@ -726,10 +730,20 @@ def _run_apify_actor(actor_id: str, input_data: dict) -> list[dict]:
             params={"token": settings.apify_api_token},
             json=input_data,
         )
+        body = (r.text or "")[:500]
+        low = body.lower()
+        if r.status_code == 404 and ("record-not-found" in low or "actor was not found" in low):
+            raise ApifyActorNotFoundError(actor_id, body[:200])
         if r.status_code >= 400:
-            logger.warning(f"   Apify {actor_id} HTTP {r.status_code}: {r.text[:200]}")
+            if r.status_code != 404:
+                logger.warning(f"   Apify {actor_id} HTTP {r.status_code}: {body[:200]}")
             return []
-        return r.json() if isinstance(r.json(), list) else []
+        try:
+            data = r.json()
+        except Exception:
+            logger.warning(f"   Apify {actor_id}: non-JSON response")
+            return []
+        return data if isinstance(data, list) else []
 
 
 # ── ATS company scrapers (parallel) ──────────────────────────────────────
@@ -782,8 +796,12 @@ def _scrape_one_company(company: dict, config) -> list[dict]:
     return results
 
 
-def _scrape_ats_companies() -> list[dict]:
+def _scrape_ats_companies(scraper_agent_cfg: dict | None = None) -> list[dict]:
     """Scrape all company career pages concurrently with ThreadPoolExecutor."""
+    sa = scraper_agent_cfg or {}
+    max_workers = max(1, int(sa.get("ats_max_workers", ATS_MAX_WORKERS)))
+    company_timeout = max(5, int(sa.get("ats_company_timeout_seconds", ATS_COMPANY_TIMEOUT)))
+
     companies_dir = Path("companies")
     if not companies_dir.exists():
         logger.warning("   companies/ directory not found — skipping ATS scraping")
@@ -802,7 +820,10 @@ def _scrape_ats_companies() -> list[dict]:
         return []
 
     yaml_files = list(companies_dir.glob("*.yaml")) + list(companies_dir.glob("*.yml"))
-    logger.info(f"   ATS: loading {len(yaml_files)} company configs (max_workers={ATS_MAX_WORKERS}, timeout={ATS_COMPANY_TIMEOUT}s)")
+    logger.info(
+        f"   ATS: loading {len(yaml_files)} company configs "
+        f"(max_workers={max_workers}, timeout={company_timeout}s)"
+    )
 
     import yaml as _yaml
     companies = []
@@ -819,16 +840,16 @@ def _scrape_ats_companies() -> list[dict]:
     all_jobs = []
     success = 0
     failed = 0
-    timed_out = 0
+    timed_out_stems: list[str] = []
 
-    with ThreadPoolExecutor(max_workers=ATS_MAX_WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_map = {
             pool.submit(_scrape_one_company, company, config): company
             for company in companies
         }
 
         try:
-            for future in as_completed(future_map, timeout=ATS_COMPANY_TIMEOUT):
+            for future in as_completed(future_map, timeout=company_timeout):
                 company = future_map[future]
                 stem = company.get("_yaml_stem", company.get("name", "?"))
                 try:
@@ -841,20 +862,25 @@ def _scrape_ats_companies() -> list[dict]:
                     failed += 1
                     logger.debug(f"   ATS failed {stem}: {e}")
         except FuturesTimeout:
-            # Expected when some company scrapers exceed timeout window.
             pass
 
-        # Any futures not completed within timeout window are considered timed out.
         for future, company in future_map.items():
             if future.done():
                 continue
-            timed_out += 1
-            stem = company.get("_yaml_stem", company.get("name", "?"))
-            logger.warning(f"   ATS timeout: {stem} (>{ATS_COMPANY_TIMEOUT}s)")
+            stem = str(company.get("_yaml_stem", company.get("name", "?")))
+            timed_out_stems.append(stem)
             future.cancel()
 
+    if timed_out_stems:
+        sample = ", ".join(timed_out_stems[:8])
+        more = f" (+{len(timed_out_stems) - 8} more)" if len(timed_out_stems) > 8 else ""
+        logger.warning(
+            f"   ATS: {len(timed_out_stems)} company scrape(s) exceeded {company_timeout}s "
+            f"(sample: {sample}{more}). Raise ats_company_timeout_seconds or lower ats_max_workers in config.yaml."
+        )
+
     logger.info(
-        f"   ATS done: {success} OK, {failed} failed, {timed_out} timed out, "
+        f"   ATS done: {success} OK, {failed} failed, {len(timed_out_stems)} timed out, "
         f"{len(all_jobs)} jobs found"
     )
     return all_jobs

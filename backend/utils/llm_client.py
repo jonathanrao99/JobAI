@@ -22,6 +22,41 @@ _OPENROUTER_429_RETRIES = 3
 _OPENROUTER_429_BACKOFF = 5  # base seconds; capped so HTTP clients/proxies do not hang up
 _OPENROUTER_429_BACKOFF_CAP = 35  # max seconds per wait
 
+# OpenAI: skip unusable keys and stop calling after 401 (bad key).
+_openai_auth_failed: bool = False
+_openai_placeholder_key_logged: bool = False
+
+
+def _openai_key_usable(key: str) -> bool:
+    k = (key or "").strip()
+    if len(k) < 8:
+        return False
+    low = k.lower()
+    if low.startswith("sk-your") or "placeholder" in low or low in ("sk-", "test", "xxx"):
+        return False
+    if k.startswith("your_") or k.startswith("YOUR_"):
+        return False
+    return True
+
+
+def _openai_key_ok_for_provider() -> bool:
+    global _openai_placeholder_key_logged
+    raw = settings.openai_api_key or ""
+    if _openai_auth_failed:
+        return False
+    if not raw.strip():
+        return False
+    if not _openai_key_usable(raw):
+        if not _openai_placeholder_key_logged:
+            _openai_placeholder_key_logged = True
+            logger.warning(
+                "[LLM_CLIENT] OPENAI_API_KEY is set but looks invalid or placeholder — "
+                "OpenAI provider skipped (no failed API calls)."
+            )
+        return False
+    return True
+
+
 def _available_providers() -> list[str]:
     """Return the list of providers that have API keys configured.
 
@@ -42,7 +77,7 @@ def _available_providers() -> list[str]:
         _append_unique(out, "anthropic")
     elif preferred == "google" and (settings.google_api_key or settings.gemini_api_key):
         _append_unique(out, "google")
-    elif preferred == "openai" and settings.openai_api_key:
+    elif preferred == "openai" and _openai_key_ok_for_provider():
         _append_unique(out, "openai")
 
     # Fill remaining configured providers as fallbacks (order: anthropic, google, openai, openrouter).
@@ -50,7 +85,7 @@ def _available_providers() -> list[str]:
         _append_unique(out, "anthropic")
     if settings.google_api_key or settings.gemini_api_key:
         _append_unique(out, "google")
-    if settings.openai_api_key:
+    if _openai_key_ok_for_provider():
         _append_unique(out, "openai")
     if settings.openrouter_api_key:
         _append_unique(out, "openrouter")
@@ -64,10 +99,12 @@ async def call_llm(
     max_tokens: int = 1000,
     temperature: float = 0.3,
     expect_json: bool = False,
+    strict_json_object: bool = False,
 ) -> str:
     """
     Try each available provider in order. First success wins.
     Completely stateless — safe for concurrent asyncio.gather calls.
+    strict_json_object: when True, OpenAI requests JSON object mode (resume / materials only).
     """
     providers = _available_providers()
     if not providers:
@@ -78,7 +115,9 @@ async def call_llm(
     for provider in providers:
         logger.debug(f"LLM call → provider={provider} max_tokens={max_tokens}")
         try:
-            result = await _dispatch(provider, messages, system, max_tokens, temperature)
+            result = await _dispatch(
+                provider, messages, system, max_tokens, temperature, strict_json_object
+            )
             if expect_json:
                 result = _strip_json_fences(result)
             return result
@@ -96,19 +135,24 @@ def call_llm_sync(
     max_tokens: int = 1000,
     temperature: float = 0.3,
     expect_json: bool = False,
+    strict_json_object: bool = False,
 ) -> str:
     """Synchronous wrapper for non-async contexts."""
     import asyncio
-    return asyncio.run(call_llm(messages, system, max_tokens, temperature, expect_json))
+    return asyncio.run(call_llm(messages, system, max_tokens, temperature, expect_json, strict_json_object))
 
 
-async def _dispatch(provider: str, messages, system, max_tokens, temperature) -> str:
+async def _dispatch(
+    provider: str, messages, system, max_tokens, temperature, strict_json_object: bool = False
+) -> str:
     if provider == "anthropic":
         return await _call_anthropic(messages, system, max_tokens, temperature)
     if provider == "google":
         return await _call_gemini(messages, system, max_tokens, temperature)
     if provider == "openai":
-        return await _call_openai(messages, system, max_tokens, temperature)
+        return await _call_openai(
+            messages, system, max_tokens, temperature, strict_json_object=strict_json_object
+        )
     if provider == "openrouter":
         return await _call_openrouter(messages, system, max_tokens, temperature)
     raise ValueError(f"Unknown provider: {provider}")
@@ -157,11 +201,23 @@ async def _call_gemini(messages, system, max_tokens, temperature) -> str:
         return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
-async def _call_openai(messages, system, max_tokens, temperature) -> str:
+async def _call_openai(
+    messages, system, max_tokens, temperature, *, strict_json_object: bool = False
+) -> str:
+    global _openai_auth_failed
     all_messages: list[dict[str, Any]] = []
     if system:
         all_messages.append({"role": "system", "content": system})
     all_messages.extend(messages)
+
+    body: dict[str, Any] = {
+        "model": settings.openai_model or "gpt-4o-mini",
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "messages": all_messages,
+    }
+    if strict_json_object:
+        body["response_format"] = {"type": "json_object"}
 
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(
@@ -170,15 +226,19 @@ async def _call_openai(messages, system, max_tokens, temperature) -> str:
                 "Authorization": f"Bearer {settings.openai_api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": settings.openai_model or "gpt-4o-mini",
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "messages": all_messages,
-            },
+            json=body,
         )
-        r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+    if r.status_code == 401:
+        if not _openai_auth_failed:
+            logger.error(
+                "[LLM_CLIENT] OpenAI returned 401 — OPENAI_API_KEY is missing or invalid. "
+                "Disabling OpenAI for this process; fix the key or unset it to avoid noisy retries."
+            )
+        _openai_auth_failed = True
+        raise RuntimeError("OpenAI authentication failed (401)")
+    r.raise_for_status()
+    data = r.json()
+    return data["choices"][0]["message"]["content"]
 
 
 async def _call_openrouter(messages, system, max_tokens, temperature) -> str:
@@ -270,7 +330,10 @@ async def _openrouter_single_call(
         raise RuntimeError(f"OpenRouter HTTP {r.status_code}")
 
     if not isinstance(data, dict):
-        raise RuntimeError("OpenRouter returned non-JSON response")
+        snippet = (r.text or "")[:240].replace("\n", " ")
+        raise RuntimeError(
+            f"OpenRouter returned non-JSON (HTTP {r.status_code}): {snippet or 'empty body'}"
+        )
 
     choices = data.get("choices") or []
     if not choices:
@@ -316,6 +379,10 @@ def _extract_from_reasoning(msg: dict) -> str | None:
     if json_match:
         return json_match.group(0)
 
+    arr_match = re.search(r"\[[\s\S]*\]", reasoning_text)
+    if arr_match:
+        return arr_match.group(0)
+
     return None
 
 
@@ -337,9 +404,14 @@ def parse_json_response(text: str) -> dict | list:
         return json.loads(clean)
     except json.JSONDecodeError as e:
         # Common failure mode: models return JSON with unescaped newlines inside strings.
-        # We try to repair by extracting the outer JSON object and escaping '\n' within quoted strings.
         try:
             extracted = _extract_json_object(clean)
+            repaired = _escape_newlines_in_json_strings(extracted)
+            return json.loads(repaired)
+        except Exception:
+            pass
+        try:
+            extracted = _extract_json_array(clean)
             repaired = _escape_newlines_in_json_strings(extracted)
             return json.loads(repaired)
         except Exception:
@@ -351,6 +423,14 @@ def parse_json_response(text: str) -> dict | list:
 def _extract_json_object(text: str) -> str:
     start = text.find("{")
     end = text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return text
+    return text[start : end + 1]
+
+
+def _extract_json_array(text: str) -> str:
+    start = text.find("[")
+    end = text.rfind("]")
     if start == -1 or end == -1 or end <= start:
         return text
     return text[start : end + 1]

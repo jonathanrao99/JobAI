@@ -21,6 +21,10 @@ cp .env.example .env
 # 5. Run Supabase migration
 # → SQL Editor → paste backend/db/schema.sql → Run (includes job_dashboard_stats RPC)
 # → Or: python backend/db/migrate.py  (prints the same instructions)
+#
+#   Also run these in SQL Editor when upgrading an existing project:
+#   - backend/db/migrations/add_application_materials.sql (linkedin_note, cold_email, cold_email_subject on applications — fixes PGRST204 on prepare)
+#   - job_analytics_series function: copy the `CREATE OR REPLACE FUNCTION public.job_analytics_series` block from backend/db/schema.sql (speeds up GET /api/jobs/analytics)
 
 # 6. Fill in your profile
 # → Edit data/candidate_profile.json with your actual details

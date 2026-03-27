@@ -13,12 +13,12 @@ DELETE /api/applications/:id        — remove an application
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-
 from loguru import logger
+from pydantic import BaseModel
 
 from backend.db.client import db
 from backend.errors import INTERNAL_ERROR, log_internal_error
@@ -323,6 +323,9 @@ async def prepare_application(application_id: str):
         contacts_count = 0
 
         resume_id = resume_result.get("resume_id")
+        _repo = Path(__file__).resolve().parents[2]
+        _pp = resume_result.get("pdf_path")
+        pdf_ready = bool(_pp and (_repo / Path(str(_pp))).is_file())
         existing_notes = (app_res.data or {}).get("notes")
         update: dict = {
             "cover_letter": materials.get("cover_letter") or "",
@@ -387,6 +390,7 @@ async def prepare_application(application_id: str):
             "resume": {
                 "resume_id": resume_id,
                 "pdf_path": resume_result.get("pdf_path"),
+                "pdf_ready": pdf_ready,
                 "diff_summary": resume_result.get("diff_summary"),
                 "keywords_added": resume_result.get("keywords_added", []),
             },

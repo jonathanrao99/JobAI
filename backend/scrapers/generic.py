@@ -248,11 +248,14 @@ class GenericScraper(BaseScraper):
                 with sync_playwright() as p:
                     browser = p.chromium.launch(headless=self.config.scraper.headless)
                     page = browser.new_page(user_agent=_rl.get_user_agent())
-                    # Keep generic Playwright scraping bounded so slow companies don't stall the run.
-                    page.set_default_timeout(15_000)
-                    page.set_default_navigation_timeout(15_000)
-                    page.goto(url, wait_until="networkidle", timeout=15_000)
-                    time.sleep(2)
+                    host = (urlparse(url).hostname or "").lower()
+                    heavy_site = "amazon" in host or host.endswith("amazon.jobs")
+                    nav_timeout = 45_000 if heavy_site else 15_000
+                    wait_until = "load" if heavy_site else "domcontentloaded"
+                    page.set_default_timeout(nav_timeout)
+                    page.set_default_navigation_timeout(nav_timeout)
+                    page.goto(url, wait_until=wait_until, timeout=nav_timeout)
+                    time.sleep(2 if heavy_site else 1)
                     html = page.content()
                     browser.close()
 

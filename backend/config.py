@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     google_model: str = "gemini-2.0-flash"
     openai_model: str = "gpt-4o-mini"
 
+    # Filter agent: lower concurrency reduces 429s on free-tier LLM APIs.
+    filter_llm_concurrent_batches: int = 2
+    filter_llm_batch_stagger_ms: int = 400
+
     # ── Apify ────────────────────────────────────────────
     apify_api_token: str = ""
     apify_people_actor_id: str = "apify/google-search-scraper"

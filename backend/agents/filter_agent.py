@@ -18,6 +18,7 @@ from pathlib import Path
 from dateutil import parser as dateparser
 from loguru import logger
 
+from backend.config import settings
 from backend.db.client import db
 from backend.prompts.filter_prompt import FILTER_SYSTEM_PROMPT, build_filter_prompt
 from backend.utils.dedup import pre_filter_by_keywords
@@ -26,7 +27,6 @@ from backend.utils.salary_parse import parse_salary_range_from_text
 
 PROFILE_PATH = Path("data/candidate_profile.json")
 BATCH_SIZE = 10           # Jobs per LLM call
-CONCURRENT_BATCHES = 3    # Max simultaneous LLM calls
 
 
 def _count_by_source_board(jobs: list[dict]) -> dict[str, int]:
@@ -62,6 +62,13 @@ def load_profile() -> dict:
     return json.loads(PROFILE_PATH.read_text())
 
 
+_FILTER_JSON_REPAIR_SYSTEM = (
+    "You fix malformed JSON. Output ONLY a valid JSON array (no markdown, no prose). "
+    "Each element must be an object with keys: index, score, verdict, reason, "
+    "missing_skills, strengths, jd_keywords."
+)
+
+
 async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_batches: int) -> list[dict]:
     """Score a single batch of jobs via LLM. Returns list of scored job dicts."""
     logger.info(f"   Scoring batch {batch_num}/{total_batches} ({len(batch)} jobs)...")
@@ -76,7 +83,24 @@ async def _score_batch(batch: list[dict], profile: dict, batch_num: int, total_b
             expect_json=True,
         )
 
-        results = parse_json_response(response)
+        try:
+            results = parse_json_response(response)
+        except ValueError:
+            repair_user = (
+                "The following text was supposed to be ONLY a JSON array matching the schema. "
+                "Return ONLY the corrected JSON array, same length as jobs implied, no markdown.\n\n"
+                + response[:14_000]
+            )
+            logger.warning(f"   Batch {batch_num}: JSON parse failed — one repair attempt via LLM")
+            repaired = await call_llm(
+                messages=[{"role": "user", "content": repair_user}],
+                system=_FILTER_JSON_REPAIR_SYSTEM,
+                max_tokens=6000,
+                temperature=0.0,
+                expect_json=True,
+            )
+            results = parse_json_response(repaired)
+
         if not isinstance(results, list):
             raise ValueError(f"Expected list, got {type(results)}")
 
@@ -142,7 +166,7 @@ def run_filter_agent(jobs: list[dict]) -> dict:
 
     batches = [candidates[i:i + BATCH_SIZE] for i in range(0, len(candidates), BATCH_SIZE)]
     total_batches = len(batches)
-    logger.info(f"   {total_batches} batches of ~{BATCH_SIZE} (concurrency={CONCURRENT_BATCHES})")
+    logger.info(f"   {total_batches} batches of ~{BATCH_SIZE} (concurrency={max(1, int(getattr(settings, 'filter_llm_concurrent_batches', 2) or 2))})")
 
     scored = asyncio.run(_run_all_batches(batches, profile, total_batches))
     llm_calls = total_batches
@@ -178,10 +202,14 @@ def run_filter_agent(jobs: list[dict]) -> dict:
 
 async def _run_all_batches(batches: list[list[dict]], profile: dict, total_batches: int) -> list[dict]:
     """Process all batches with bounded concurrency using a semaphore."""
-    sem = asyncio.Semaphore(CONCURRENT_BATCHES)
+    concurrent = max(1, int(getattr(settings, "filter_llm_concurrent_batches", 2) or 2))
+    stagger_ms = max(0, int(getattr(settings, "filter_llm_batch_stagger_ms", 0) or 0))
+    sem = asyncio.Semaphore(concurrent)
 
     async def _limited(batch, num):
         async with sem:
+            if stagger_ms and num > 1:
+                await asyncio.sleep((stagger_ms / 1000.0) * (num - 1))
             return await _score_batch(batch, profile, num, total_batches)
 
     tasks = [_limited(batch, i + 1) for i, batch in enumerate(batches)]

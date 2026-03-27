@@ -202,6 +202,7 @@ def run_application_materials_agent(job: dict) -> dict[str, Any]:
             max_tokens=_MATERIALS_MAX_TOKENS,
             temperature=0.35,
             expect_json=True,
+            strict_json_object=True,
         )
         data = parse_json_response(raw)
         if not isinstance(data, dict):

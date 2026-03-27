@@ -111,9 +111,10 @@ JOB {i}:
 JOBS TO EVALUATE:
 {jobs_text}
 
-Respond with a JSON array — one object per job, in order. Each object must have:
+Respond with a single JSON array only — one object per JOB listed above, same order (JOB 0, JOB 1, …).
+Each object must have exactly these keys:
 {{
-  "index": <integer, 0-based>,
+  "index": <integer, 0-based, matching JOB number>,
   "score": <integer 1-10>,
   "verdict": "APPLY" | "MAYBE" | "SKIP",
   "reason": "<one sentence, specific to this job and candidate>",
@@ -122,4 +123,5 @@ Respond with a JSON array — one object per job, in order. Each object must hav
   "jd_keywords": ["<8-15 short strings: tools, frameworks, languages, domains, methods mentioned in the title or description — only if explicitly stated; do not invent credentials or employers>"]
 }}
 
-Respond ONLY with the JSON array. No preamble, no markdown fences."""
+Rules: valid JSON only; use double quotes; no trailing commas; no markdown code fences; no commentary before or after the array.
+If a field has no items, use an empty array [] for array keys."""

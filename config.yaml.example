@@ -207,12 +207,13 @@ scraper_agent:
   # Extra or replacement search strings for JobSpy + Dice Apify actor
   # search_queries: []
   # JobSpy site ids (must be supported by python-jobspy)
+  # Default JobSpy sites omit dice (often flaky in python-jobspy). Set jobspy_include_dice: true to add it.
   jobspy_sites:
     - linkedin
     - indeed
     - zip_recruiter
     - google
-    - dice
+  # jobspy_include_dice: false   # default when jobspy_sites omitted; set true to append dice
   # Geographic search strings for JobSpy (falls back to target_locations if omitted)
   # locations:
   #   - "United States"
@@ -229,6 +230,9 @@ scraper_agent:
   # runtime_profile: balanced    # fast | balanced | max
   # max_results_per_source: 200
   # max_apify_actor_runs: 40
+  # ATS parallel scrape tuning (optional):
+  # ats_max_workers: 6
+  # ats_company_timeout_seconds: 35
 
   # Optional: extra Apify Store actors (requires APIFY_API_TOKEN). Each run calls
   # per search query. Do not add shahidirfan/dice-job-scraper here — Dice is built in.
@@ -244,19 +248,11 @@ scraper_agent:
   #       search: "{query}"
   #       location: "{location}"
   #
-  # Phase 1 US major-board defaults (recommended):
+  # Example apify_actors (use actor IDs that exist in Apify Console — horizon_datajobs/* often 404):
   # apify_actors:
-  #   - id: horizon_datajobs/us-wellfound-jobs
+  #   - id: your-username/working-actor
   #     enabled: true
-  #     source_board: wellfound
-  #     mapper: flex
-  #     results_wanted: 25
-  #     input:
-  #       query: "{query}"
-  #       location: "{location}"
-  #   - id: horizon_datajobs/us-builtin-jobs
-  #     enabled: true
-  #     source_board: builtin
+  #     source_board: custom
   #     mapper: flex
   #     results_wanted: 25
   #     input:

@@ -198,9 +198,9 @@ class WorkdayScraper(BaseScraper):
             with sync_playwright() as p:
                 browser = p.chromium.launch(headless=self.config.scraper.headless)
                 page = browser.new_page(user_agent=_rl.get_user_agent())
-                page.goto(url, wait_until="networkidle", timeout=60_000)
+                page.goto(url, wait_until="load", timeout=90_000)
                 time.sleep(2)
-                page.wait_for_selector("[data-automation-id='jobTitle']", timeout=20_000)
+                page.wait_for_selector("[data-automation-id='jobTitle']", timeout=30_000)
 
                 for card in page.query_selector_all("[data-automation-id='jobTitle']"):
                     if company_job_count >= self.config.max_jobs_per_company:

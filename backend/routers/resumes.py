@@ -55,13 +55,18 @@ async def tailor_resume(body: TailorRequest):
 
         result = await asyncio.to_thread(run_resume_agent, job)
 
+        pdf_path = result.get("pdf_path")
+        pdf_ready = bool(
+            pdf_path and (REPO_ROOT / Path(str(pdf_path))).is_file()
+        )
         return {
             "success": True,
             "resume_id": result.get("resume_id"),
             "job_id": body.job_id,
             "job_title": job.get("title"),
             "company": job.get("company"),
-            "pdf_path": result.get("pdf_path"),
+            "pdf_path": pdf_path,
+            "pdf_ready": pdf_ready,
             "tex_path": result.get("file_path"),
             "diff_summary": result["diff_summary"],
             "keywords_added": result["keywords_added"],
@@ -144,14 +149,27 @@ async def download_resume(
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR) from None
 
     if not result.data or not result.data.get("file_path"):
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No resume record or file_path for resume_id={resume_id}",
+        )
 
     base = Path(result.data["file_path"])
     target = base.with_suffix(f".{format}")
     full_path = REPO_ROOT / target
 
     if not full_path.exists():
-        raise HTTPException(status_code=404, detail="Requested resume file is not available.")
+        if format == "pdf":
+            tex_alt = REPO_ROOT / base.with_suffix(".tex")
+            if tex_alt.is_file():
+                raise HTTPException(
+                    status_code=503,
+                    detail="PDF not ready yet — only .tex on disk; re-run tailor or wait for compile.",
+                )
+        raise HTTPException(
+            status_code=404,
+            detail=f"Resume file missing on server for resume_id={resume_id} (format={format}).",
+        )
 
     # PDF: inline disposition so browsers can render inside <iframe> (attachment often shows a blank box).
     disposition = "inline" if format == "pdf" else "attachment"
